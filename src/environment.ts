@@ -382,6 +382,7 @@ const CONSTANTS = {
   understaffPenalty: 0.05, // drop per worker the run is short of what its pace needs
   satisfactionMin: 0.05, // never quite empties...
   satisfactionMax: 0.99, // ...nor quite fills
+  safetyNoteThreshold: 0.4, // show the worker-safety note the first time satisfaction falls below this
 
   // --- Raw materials: the supply the line eats as it runs --------------------
   // The line turns raw material into product one-for-one, so a run uses as many
@@ -713,6 +714,21 @@ const COMPETITION_BEAT = GROWTH_NEWS.length;
 // ProductionSystem shows the End of Day Production Report (watched via dayOver).
 const CLOSING_BEAT = GROWTH_NEWS.length + COMPETITION_NEWS.length;
 
+// How many successful runs the student must complete before the foreman is
+// allowed to move the day into each later phase. These two numbers are the
+// only dials. Raise them to slow the pacing, lower them to speed it up.
+const RUNS_BEFORE_COMPETITION = 4; // produce this many before Phase 3 can start
+const RUNS_BEFORE_CLOSING = 7;     // produce this many before the day can end
+
+// What the foreman says when the student tries to move the story forward too
+// early. Shown on his speech panel instead of advancing the news.
+const PACING_NUDGE = {
+  competition:
+    "Not yet. Keep the line running and try growing the factory first. Hire a hand, change the speed, or expand. Come back once you have a few more runs done.",
+  closing:
+    "The day is not over yet. Keep the factory going and work through the trouble on the floor. We will close up once we have pushed through.",
+};
+
 // Fill the "{product}" / "{material}" / "{machine}" placeholders in a beat with
 // the chosen business's words. (Plain split/join — no replaceAll — to stay
 // ES2020-friendly.) Reused for the foreman's news AND the challenge announcements.
@@ -995,6 +1011,9 @@ const CALLOUTS = {
   // The first time the Raw Materials stock runs low (at/below materials.lowThreshold).
   lowMaterials:
     "Factories needed a steady supply of materials. If the supply stopped, the machines stopped.",
+  // The first time Worker Satisfaction drops low (the crew is being pushed hard).
+  workerSafety:
+    "Your workers are getting worn out. In real factories, pushing crews too hard led to unsafe conditions, and later to new rules that helped keep workers safe.",
 };
 
 // =============================================================================
@@ -1443,6 +1462,10 @@ export function buildEnvironment(world: World): void {
   // The foreman flips this when he calls the end of the day (his closing beat);
   // the ProductionSystem watches it to show the End of Day Production Report.
   world.globals.dayOver = false;
+  // The ProductionSystem writes the number of completed (successful) runs here
+  // after each run. The ForemanSystem reads it to pace the phases: the
+  // competitor cannot open, and the day cannot end, until enough runs are done.
+  world.globals.runsCompleted = 0;
   // Starts false: the real game (the foreman's news phases + the production hints
   // and breathing guidance) stays held back until the opening goal card + the
   // foreman's guided tour are finished (or skipped). The TutorialSystem flips it
@@ -3905,6 +3928,7 @@ export class ProductionSystem extends createSystem({
   // --- One-time teaching callouts (shown the FIRST time each action happens) ---
   private taughtFirstHire = false; // has the "factories employed hundreds" note been shown?
   private taughtLowMaterials = false; // has the "steady supply of materials" note been shown?
+  private taughtWorkerSafety = false; // has the worker-safety note been shown once?
 
   // --- Machine wear (pushing Fast piles it on; a breakdown grows likely) ---
   private machineWear = 0; // extra breakdown chance built up from the pace
@@ -4451,9 +4475,13 @@ export class ProductionSystem extends createSystem({
     // steady supply mattered. Runs AFTER showNote so it takes the note that run.
     this.maybeTeachLowMaterials();
 
+    // Teaching moment (once): name worker safety if the crew is being pushed low.
+    this.maybeTeachWorkerSafety();
+
     // First-time hints: nudge the player to keep going after the first run, then
     // toward the foreman after the second. Each is shown only once, then it fades.
     this.runsFinished += 1;
+    this.globals.runsCompleted = this.runsFinished;
     if (this.runsFinished === 1) this.queueHint("again");
     if (this.runsFinished === 2) this.queueHint("foreman");
   }
@@ -4607,6 +4635,17 @@ export class ProductionSystem extends createSystem({
     if (this.materials > CONSTANTS.materials.lowThreshold) return;
     this.taughtLowMaterials = true;
     this.setNote(CALLOUTS.lowMaterials);
+  }
+
+  // Teaching moment (once): the first time the crew's satisfaction falls low,
+  // name worker safety right on the floor, not just in the end report. Display
+  // only. It never changes a run or a score.
+  private maybeTeachWorkerSafety(): void {
+    if (!this.globals.tourDone) return;
+    if (this.taughtWorkerSafety) return;
+    if (this.satisfactionValue >= CONSTANTS.safetyNoteThreshold) return;
+    this.taughtWorkerSafety = true;
+    this.setNote(CALLOUTS.workerSafety);
   }
 
   // Glide the Raw Materials meter from an old stock level to the current one.
@@ -5317,7 +5356,7 @@ export class ForemanSystem extends createSystem({
   private newsIndex = -1; // which beat is showing (-1 = none yet)
   private revealed = false; // has the panel been shown at least once?
   private fadeElapsed = 0; // seconds into the panel's first fade-in
-  private wasNear = false; // was the viewer within range last frame?
+  private armed = true; // ready to deliver one beat on the next real approach
   private viewer!: Vector3; // scratch vector for the viewer's world position
 
   init(): void {
@@ -5336,9 +5375,17 @@ export class ForemanSystem extends createSystem({
     const dx = this.viewer.x - CONSTANTS.foreman.x;
     const dz = this.viewer.z - CONSTANTS.foreman.z;
     const range = CONSTANTS.foreman.range;
-    const near = dx * dx + dz * dz <= range * range;
-    if (near && !this.wasNear) this.advanceNews();
-    this.wasNear = near;
+    // Two distances, like a thermostat: he fires when you come within "enter,"
+    // then will not fire again until you have stepped past the farther "exit"
+    // distance and come back. This stops pacing in and out from skipping his news.
+    const distSq = dx * dx + dz * dz;
+    const enter = range * range;
+    const exit = (range * 1.6) * (range * 1.6); // must get this far away to re-arm
+    if (!this.armed && distSq > exit) this.armed = true;
+    if (this.armed && distSq <= enter) {
+      this.armed = false;
+      this.advanceNews();
+    }
 
     // Fade the panel in the first time it is shown.
     if (this.revealed && this.fadeElapsed < CONSTANTS.foreman.panelFadeSeconds) {
@@ -5365,6 +5412,34 @@ export class ForemanSystem extends createSystem({
     if (!panel) return;
 
     const prevIndex = this.newsIndex;
+    // Pacing gate: figure out the beat we would move to next.
+    const nextIndex = Math.min(this.newsIndex + 1, FOREMAN_NEWS.length - 1);
+    const runs = (this.globals.runsCompleted as number) ?? 0;
+
+    // Gate 1: hold the competitor (Phase 3) until the student has scaled up.
+    if (
+      this.newsIndex < COMPETITION_BEAT &&
+      nextIndex >= COMPETITION_BEAT &&
+      runs < RUNS_BEFORE_COMPETITION
+    ) {
+      (panel.userData.setText as (text: string) => void)(PACING_NUDGE.competition);
+      panel.visible = true;
+      if (!this.revealed) { this.revealed = true; this.fadeElapsed = 0; }
+      return; // do not advance the news this time
+    }
+
+    // Gate 2: hold the end of the day until the student has worked through Phase 3.
+    if (
+      this.newsIndex < CLOSING_BEAT &&
+      nextIndex >= CLOSING_BEAT &&
+      runs < RUNS_BEFORE_CLOSING
+    ) {
+      (panel.userData.setText as (text: string) => void)(PACING_NUDGE.closing);
+      panel.visible = true;
+      if (!this.revealed) { this.revealed = true; this.fadeElapsed = 0; }
+      return; // do not advance the news this time
+    }
+
     this.newsIndex = Math.min(this.newsIndex + 1, FOREMAN_NEWS.length - 1);
     // Ring a soft bell only when there is genuinely a NEW beat to hear (not on
     // repeat clicks once he has reached his last bit of news).
