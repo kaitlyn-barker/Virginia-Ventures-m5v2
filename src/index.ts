@@ -1,0 +1,169 @@
+// =============================================================================
+// index.ts — the entry point for "The Factory Floor: Building Virginia's
+// Industry" (Module 5).
+//
+// This file does the WORLD SETUP only:
+//   1. Create the world (XR + locomotion + grabbing + physics).
+//   2. Place the player at standing height near one end of the room.
+//   3. Lay down the walkable floor.
+//   4. Build the scenery (handled by buildEnvironment in environment.ts).
+//   5. Wire up browser mouse-look (right-drag to look around).
+//
+// At this step there is no game logic, no UI, and no machines — just the empty,
+// atmospheric factory you walk into.
+// =============================================================================
+
+import {
+  World,
+  SessionMode,
+  VisibilityState,
+  Mesh,
+  PlaneGeometry,
+  MeshLambertMaterial,
+  LocomotionEnvironment,
+  EnvironmentType,
+} from "@iwsdk/core";
+
+import {
+  buildEnvironment,
+  makePlankTexture,
+  ROOM,
+  ROOM_CENTER_Z,
+  FLOOR_MARGIN,
+} from "./environment.js";
+
+// -----------------------------------------------------------------------------
+// CONSTANTS — the few tunable numbers that belong to world setup.
+// -----------------------------------------------------------------------------
+const CONSTANTS = {
+  eyeHeight: 1.6, // standing eye height, in meters (where the camera sits)
+  lookSensitivity: 0.0025, // how fast right-drag turns the view
+  maxPitch: Math.PI / 2 - 0.05, // stop just short of straight up/down so the view can't flip over
+};
+
+World.create(document.getElementById("scene-container") as HTMLDivElement, {
+  // Offer a VR headset experience, and keep offering it ("always").
+  xr: {
+    sessionMode: SessionMode.ImmersiveVR,
+    offer: "always",
+  },
+  features: {
+    // Locomotion lets the player walk. `useWorker` runs the movement math off
+    // the main thread for smoothness. `browserControls` turns on WASD + arrow
+    // keys for desktop. (The player spawns at the world origin; environment.ts
+    // positions the room so the origin is near one end — see ROOM_CENTER_Z.)
+    locomotion: {
+      useWorker: true,
+      browserControls: true,
+    },
+    grabbing: true, // allow picking things up later
+    physics: true, // allow physical objects later
+  },
+  render: {
+    // We light the room ourselves in environment.ts, so turn off the default
+    // gradient sky/lighting — otherwise it would fight our warm interior look.
+    defaultLighting: false,
+    // The camera is the player's head. Put it at standing eye height and aim it
+    // straight down the length of the room (rotation [0,0,0] looks toward -Z).
+    camera: {
+      position: [0, CONSTANTS.eyeHeight, 0],
+      rotation: [0, 0, 0],
+    },
+  },
+}).then((world) => {
+  const { camera } = world;
+
+  // ---------------------------------------------------------------------------
+  // FLOOR — a flat plank-wood plane the player can walk on.
+  // Adding the LocomotionEnvironment component (type STATIC) tells the
+  // locomotion system "this is solid ground," so the player walks on it instead
+  // of falling through the world.
+  //
+  // We make the floor a little BIGGER than the room (by FLOOR_MARGIN on every
+  // side) so there is always solid ground under the player everywhere they can
+  // walk, even right up against a wall. The extra floor sits behind the walls
+  // where it cannot be seen, so the room looks exactly the same inside.
+  // ---------------------------------------------------------------------------
+  const floorWidth = ROOM.width + FLOOR_MARGIN * 2;
+  const floorLength = ROOM.length + FLOOR_MARGIN * 2;
+  // Long plank boards run down the length of the room. The texture is gray, so
+  // the floor color (a warm worn brown) still tints it; the repeat counts are
+  // chosen so each board looks a believable width and is not stretched. (The
+  // boards run along the room's length — the Z axis — once the plane is laid flat.)
+  const floor = new Mesh(
+    new PlaneGeometry(floorWidth, floorLength),
+    new MeshLambertMaterial({
+      color: ROOM.floorColor,
+      map: makePlankTexture(Math.round(floorWidth / 1.8), Math.round(floorLength / 3)),
+    }),
+  );
+  floor.rotation.x = -Math.PI / 2; // lay the plane down flat
+  floor.position.z = ROOM_CENTER_Z; // line the floor up with the (shifted) room
+  floor.receiveShadow = true; // the floor catches the soft shadows of everything in the room
+  world
+    .createTransformEntity(floor)
+    .addComponent(LocomotionEnvironment, { type: EnvironmentType.STATIC });
+
+  // ---------------------------------------------------------------------------
+  // SCENERY — walls, roof, windows, lights, fog, dust, and accents.
+  // ---------------------------------------------------------------------------
+  buildEnvironment(world);
+
+  // ---------------------------------------------------------------------------
+  // BROWSER MOUSE-LOOK — drag with the RIGHT mouse button to look around.
+  // The LEFT mouse button is left free for clicking on objects (IWSDK forwards
+  // those clicks to interactive entities for us). In a headset the controls are
+  // handled by the actual head tracking, so we skip mouse-look while in XR.
+  //
+  // The official guidance is "rotate world.camera yourself" for first-person
+  // browser views, which is exactly what this does.
+  // ---------------------------------------------------------------------------
+  const canvas = world.renderer.domElement;
+
+  // 'YXZ' rotation order means: turn left/right first (yaw, around Y), then look
+  // up/down (pitch, around X). That keeps the horizon level as you drag.
+  camera.rotation.order = "YXZ";
+  let yaw = camera.rotation.y; // current left/right angle
+  let pitch = camera.rotation.x; // current up/down angle
+
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  // Don't pop up the browser's right-click menu while we're using right-drag.
+  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+
+  canvas.addEventListener("pointerdown", (event) => {
+    if (event.button !== 2) return; // 2 = right mouse button only
+    dragging = true;
+    lastX = event.clientX;
+    lastY = event.clientY;
+    canvas.setPointerCapture(event.pointerId); // keep getting moves even if the cursor leaves
+  });
+
+  canvas.addEventListener("pointerup", (event) => {
+    if (event.button !== 2) return;
+    dragging = false;
+    canvas.releasePointerCapture(event.pointerId);
+  });
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    // In a headset the head controls the view, so ignore the mouse there.
+    if (world.visibilityState.value !== VisibilityState.NonImmersive) return;
+
+    // How far the mouse moved since the last frame.
+    const deltaX = event.clientX - lastX;
+    const deltaY = event.clientY - lastY;
+    lastX = event.clientX;
+    lastY = event.clientY;
+
+    yaw -= deltaX * CONSTANTS.lookSensitivity; // drag right -> turn right
+    pitch -= deltaY * CONSTANTS.lookSensitivity; // drag down -> look down
+
+    // Clamp up/down so you can't tip past straight up or down (no flipping).
+    pitch = Math.max(-CONSTANTS.maxPitch, Math.min(CONSTANTS.maxPitch, pitch));
+
+    camera.rotation.set(pitch, yaw, 0);
+  });
+});
