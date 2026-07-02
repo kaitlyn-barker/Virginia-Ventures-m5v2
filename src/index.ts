@@ -21,6 +21,8 @@ import {
   PlaneGeometry,
   MeshLambertMaterial,
   LocomotionEnvironment,
+  LocomotionSystem,
+  TurningMethod,
   EnvironmentType,
 } from "@iwsdk/core";
 
@@ -39,6 +41,17 @@ const CONSTANTS = {
   eyeHeight: 1.6, // standing eye height, in meters (where the camera sits)
   lookSensitivity: 0.0025, // how fast right-drag turns the view
   maxPitch: Math.PI / 2 - 0.05, // stop just short of straight up/down so the view can't flip over
+
+  // --- VR comfort (anti motion-sickness) --------------------------------------
+  // Smooth gliding is the #1 motion-sickness trigger in VR, especially for kids.
+  // Teleport ("hop") is the comfortable way to get around — it is built into the
+  // engine (pull the RIGHT thumbstick back, aim the arc, let go) and the tutorial
+  // teaches it. These settings make the remaining smooth movement gentle:
+  comfort: {
+    vignette: 0.8, // comfort tunnel strength while gliding (0 = off, 1 = max) — narrows the view edges so the brain reads less "the room is moving"
+    walkSpeedVR: 2.0, // in-headset glide speed (m/s) — a calm walking pace (the engine default, 5, reads as sprinting and churns stomachs)
+    walkSpeedBrowser: 3.5, // browser WASD speed (m/s) — a flat screen can't cause motion sickness, so desktop keeps a brisker pace
+  },
 };
 
 World.create(document.getElementById("scene-container") as HTMLDivElement, {
@@ -52,9 +65,18 @@ World.create(document.getElementById("scene-container") as HTMLDivElement, {
     // the main thread for smoothness. `browserControls` turns on WASD + arrow
     // keys for desktop. (The player spawns at the world origin; environment.ts
     // positions the room so the origin is near one end — see ROOM_CENTER_Z.)
+    //
+    // The comfort settings here are for young players in a headset: a strong
+    // comfort vignette while gliding, crisp 45° snap turns (never smooth
+    // spinning), and NO jumping — a sudden camera hop is a classic sickness
+    // trigger, and the game never needs it. Teleport ("hop travel") stays on
+    // and is the recommended way to move.
     locomotion: {
       useWorker: true,
       browserControls: true,
+      comfortAssistLevel: CONSTANTS.comfort.vignette,
+      turningMethod: TurningMethod.SnapTurn,
+      enableJumping: false,
     },
     grabbing: true, // allow picking things up later
     physics: true, // allow physical objects later
@@ -72,6 +94,24 @@ World.create(document.getElementById("scene-container") as HTMLDivElement, {
   },
 }).then((world) => {
   const { camera } = world;
+
+  // ---------------------------------------------------------------------------
+  // COMFORT: gentle glide speed. The engine's default glide (5 m/s) feels like
+  // sprinting in a headset and is the main cause of motion sickness. Sliding
+  // speed can't be set through World.create, so we set it on the running system:
+  // a calm walking pace in the headset, a brisker one for browser WASD (a flat
+  // screen can't cause motion sickness). The visibilityState signal fires
+  // immediately with the current mode and again on every enter/exit of XR.
+  // ---------------------------------------------------------------------------
+  const locomotion = world.getSystem(LocomotionSystem);
+  if (locomotion) {
+    world.visibilityState.subscribe((state) => {
+      const inHeadset = state !== VisibilityState.NonImmersive;
+      locomotion.config.slidingSpeed.value = inHeadset
+        ? CONSTANTS.comfort.walkSpeedVR
+        : CONSTANTS.comfort.walkSpeedBrowser;
+    });
+  }
 
   // ---------------------------------------------------------------------------
   // FLOOR — a flat plank-wood plane the player can walk on.

@@ -194,6 +194,30 @@ const CONSTANTS = {
   dustRiseMax: 0.18, // fastest upward drift speed (meters/second)
   dustSwirl: 0.02, // how fast the whole cloud slowly turns
 
+  // --- Set dressing: extra props that make the shell read as a real factory ---
+  // Built from the same textured boxes and cylinders as the rest of the room.
+  // The SOLID pieces (wall columns, corner crates, barrels) hug the walls and
+  // get real collision, so the player bumps into them instead of ghosting
+  // through; the light shafts and hanging lamps are pure glow (no collision,
+  // no extra real lights — Quest-friendly).
+  props: {
+    columnWidth: 0.42, // timber wall column size along the wall (meters)
+    columnDepth: 0.34, // how far each column sticks out from the brick
+    crateSize: 0.62, // the corner stockpile crates (cubes, this big)
+    barrelRadius: 0.3, // the corner barrels
+    barrelHeight: 0.72,
+    barrelColor: 0x6b4a2f, // barrel wood (matches the line's structural timber)
+    bandColor: 0x2f2a26, // the dark iron hoops around each barrel
+    shaftOpacity: 0.12, // window light shafts: soft, additive (0 = none, 1 = solid light)
+    shaftInward: 2.0, // how far into the room a shaft's foot lands (matches the floor pools)
+    lampShadeColor: 0x35302b, // dark metal of the hanging lamp shades + cords
+    lampGlowColor: 0xffd9a0, // the warm bulb + its halo
+    lampShadeY: 3.4, // how high the lamp shades hang off the floor
+    lampXs: [-3, 0, 3], // where the lamps hang along the production line (line X)
+    lampHaloSize: 0.9, // the soft glow square around each bulb (meters)
+    lampHaloOpacity: 0.5,
+  },
+
   // --- Production line (scenery only — no motion yet) ---
   machineIronColor: 0x3a3f44, // dark cast iron for the machine
   lineTimberColor: 0x6b4a2f, // pale structural timber for plinths and pallets
@@ -468,7 +492,7 @@ const CONSTANTS = {
     // as overseeing the line and is always in sight.
     x: 1.3, // world X: to the right, but comfortably inside the (narrower browser) view cone
     z: -4.0, // world Z: a few meters ahead, beyond the desk (open floor)
-    range: 1.6, // step within this many meters of him to hear the next news beat
+    range: 2.2, // step within this many meters of him to hear the next news beat — generous enough that landing on his gold floor ring (see spotOffset) counts
     coatColor: 0x6e4a2b, // warm brown coat (the desk-oak tone — clearly the boss, not a worker)
     hatColor: 0x2e1f14, // dark brown hat
     hatBrimRadius: 0.2, // wide brim of the foreman's hat
@@ -485,6 +509,18 @@ const CONSTANTS = {
     promptX: 1.3, // world X of the prompt card (lined up with the foreman)
     promptY: 1.3, // chest height, easy to click
     promptZ: -3.3, // a little toward the player from the foreman (foreman.z + 0.7), so it is clickable
+
+    // The glowing "stand here" ring on the floor beside him — a clear landing
+    // target for the hop (teleport), so finding him is never a puzzle. It sits
+    // well to his RIGHT (world x 3.2, on the open floor past the desk's right
+    // edge) because at standing eye height the desk hides everything nearer:
+    // the sight line from spawn only clears the desk's right edge (x 1.95)
+    // for floor spots at roughly x 3 or beyond. Standing on it also gives a
+    // clear view OF him, and it stays inside his (widened) news `range`.
+    spotRadius: 0.55, // ring radius on the floor (meters)
+    spotOffset: [1.9, 0.4] as [number, number], // where the ring sits, relative to his feet (local X toward his right, local Z toward the player)
+    spotColor: 0xf6b73c, // warm gold — the same "this is your next step" color as his button
+    spotOpacity: 0.9, // bright enough to read as a target even on shadowed planks
   },
 
   // --- End of Day Production Report: the foreman's closing wrap-up board ------
@@ -503,6 +539,20 @@ const CONSTANTS = {
     titleTextColor: 0xf4ecd6, // cream title text on the teal band
     summaryColor: 0x1b6a6a, // teal summary band across the bottom (ties it together)
     summaryTextColor: 0xf4ecd6, // cream summary text on the teal band
+  },
+
+  // --- Celebration: a burst of confetti when the day's report appears ---------
+  // The end-of-day report is the game's "you did it!" screen — the confetti
+  // makes it FEEL like one. One Points object (a single draw call), built when
+  // the report fades in, animated with simple gravity, then disposed.
+  celebration: {
+    count: 130, // how many confetti flecks burst out
+    size: 0.05, // each fleck's size (meters)
+    riseSpeed: 2.4, // the upward pop, in m/s (flecks jump UP first, then rain down)
+    spread: 1.6, // sideways scatter speed, in m/s
+    gravity: 3.2, // how hard the flecks are pulled back down
+    seconds: 2.8, // how long the shower lasts before it fades away
+    colors: [0xf6b73c, 0x1b6a6a, 0x3d78c8, 0x4e9a51, 0x8a5fb8], // gold, teal, blue, green, purple — the dashboard's own meter palette
   },
 
   // --- Gentle guidance: a "breathing" pulse on the control to use next --------
@@ -990,7 +1040,13 @@ const CONTROL = {
 const HINTS = {
   start: "Press the glowing Start Line button to run your factory!",
   again: "Your scores went up on the board above. Press Start Line to run again!",
-  foreman: "When you are ready, step up to the foreman to hear the news.",
+  foreman:
+    "When you are ready, click the foreman's gold button — or walk over to him — to hear the news.",
+  // The headset version of the same hint (shown instead of `foreman` when an XR
+  // session is running): point-and-click works from anywhere, and "hop" is the
+  // comfortable teleport the tour taught.
+  foremanVR:
+    "When you are ready, point at the foreman's gold button and pull the trigger — or hop over to him — to hear the news.",
 };
 
 // =============================================================================
@@ -1047,6 +1103,7 @@ const TOUR_GOAL = {
 // =============================================================================
 type TourStep = {
   text: string;
+  textVR?: string; // said instead of `text` when the student is IN a headset (controller words instead of keyboard words)
   highlight: "none" | "board" | "speed" | "hire" | "start";
   wait: "next" | "control";
 };
@@ -1054,6 +1111,15 @@ type TourStep = {
 const TOUR_STEPS: TourStep[] = [
   {
     text: "Welcome to the factory floor. I am your foreman. Today, this place is yours to run.",
+    highlight: "none",
+    wait: "next",
+  },
+  {
+    // How to get around — the one thing a brand-new player is never told.
+    // Worded per mode: keyboard/mouse in the browser, thumbsticks in a headset
+    // (where the comfortable "hop" teleport is the way we WANT kids to move).
+    text: "Getting around is easy: walk with the W, A, S and D keys, and hold the RIGHT mouse button and drag to look around. Give it a try!",
+    textVR: "Getting around is easy: pull the RIGHT thumbstick back, aim the glowing arc at the floor, and let go to hop there. Flick the same stick left or right to turn. Give it a try!",
     highlight: "none",
     wait: "next",
   },
@@ -1414,6 +1480,182 @@ export function buildEnvironment(world: World): void {
     .addComponent(LocomotionEnvironment, { type: EnvironmentType.STATIC });
 
   // ---------------------------------------------------------------------------
+  // 6.7 SET DRESSING — props that make the shell read as a real working factory.
+  // Two groups, both room-local (shifted by ROOM_CENTER_Z like the room shell):
+  //   • solidProps — timber wall columns, corner crate stacks, banded barrels.
+  //     Tagged LocomotionEnvironment so the player genuinely bumps into them
+  //     (they hug the walls and corners, so they never block the play paths).
+  //   • softProps — pure light: an angled shaft of daylight under every window
+  //     and warm hanging lamps over the production line. Additive glow only, no
+  //     collision, and NO extra real lights — the Quest budget stays untouched.
+  // ---------------------------------------------------------------------------
+  const P = CONSTANTS.props;
+  const solidProps = new Group();
+  solidProps.name = "SolidProps";
+  const softProps = new Group();
+  softProps.name = "SoftProps";
+
+  // Shared geometry + materials — every copy reuses them, keeping draws cheap.
+  const columnWood = new MeshLambertMaterial({
+    color: CONSTANTS.beamColor,
+    map: makeWoodTexture(1, 4),
+  });
+  const crateWood = new MeshLambertMaterial({
+    color: CONSTANTS.crateColor,
+    map: makeWoodTexture(1, 1),
+  });
+  const barrelWood = new MeshLambertMaterial({
+    color: P.barrelColor,
+    map: makeWoodTexture(2, 1),
+  });
+  const barrelBand = new MeshLambertMaterial({ color: P.bandColor });
+
+  // Timber half-columns along both long walls, midway between the windows (and
+  // one past each end window), so the walls have structure and rhythm instead
+  // of reading as flat wallpaper.
+  const columnGeo = new BoxGeometry(P.columnDepth, H, P.columnWidth);
+  const windowSpacing = (L - 8) / (CONSTANTS.windowsPerSide - 1);
+  for (const side of [-1, 1]) {
+    for (let i = 0; i <= CONSTANTS.windowsPerSide; i++) {
+      const z = -L / 2 + 4 + (i - 0.5) * windowSpacing;
+      if (Math.abs(z) > L / 2 - 0.6) continue; // stay clear of the end walls
+      const column = new Mesh(columnGeo, columnWood);
+      column.position.set(side * (W / 2 - P.columnDepth / 2), H / 2, z);
+      solidProps.add(column);
+    }
+  }
+
+  // Corner stockpiles: a hand-stacked pile of crates and a pair of iron-banded
+  // barrels in each corner of the floor — the factory's stores, kept where
+  // nobody walks.
+  const crateGeo = new BoxGeometry(P.crateSize, P.crateSize, P.crateSize);
+  const barrelGeo = new CylinderGeometry(
+    P.barrelRadius,
+    P.barrelRadius,
+    P.barrelHeight,
+    10,
+  );
+  const bandGeo = new CylinderGeometry(
+    P.barrelRadius + 0.012,
+    P.barrelRadius + 0.012,
+    0.05,
+    10,
+    1,
+    true, // just the hoop — no caps
+  );
+  const addBarrel = (x: number, z: number): void => {
+    const body = new Mesh(barrelGeo, barrelWood);
+    body.position.set(x, P.barrelHeight / 2, z);
+    solidProps.add(body);
+    for (const level of [0.25, 0.75]) {
+      const band = new Mesh(bandGeo, barrelBand);
+      band.position.set(x, P.barrelHeight * level, z);
+      solidProps.add(band);
+    }
+  };
+  const crateS = P.crateSize;
+  for (const cx of [-1, 1]) {
+    for (const cz of [-1, 1]) {
+      const x = cx * (W / 2 - 1.1);
+      const z = cz * (L / 2 - 1.1);
+      // Two crates side by side and one on top, each turned a little so the
+      // stack looks placed by hand rather than machine-perfect.
+      const stack = [
+        { dx: 0, dz: 0, y: crateS / 2, turn: 0.0 },
+        { dx: -cx * (crateS + 0.06), dz: cz * 0.1, y: crateS / 2, turn: 0.35 },
+        { dx: -cx * 0.12, dz: 0, y: crateS * 1.5 + 0.02, turn: -0.25 },
+      ];
+      for (const c of stack) {
+        const crate = new Mesh(crateGeo, crateWood);
+        crate.position.set(x + c.dx, c.y, z + c.dz);
+        crate.rotation.y = c.turn;
+        solidProps.add(crate);
+      }
+      addBarrel(x - cx * 0.2, z - cz * (crateS + 0.75));
+      addBarrel(x - cx * (crateS + 0.7), z - cz * 0.55);
+    }
+  }
+
+  // An angled shaft of daylight under every window — one additive plane each,
+  // bright at the pane and fading to nothing where its floor light pool lands,
+  // so the glowing windows and the pools finally read as connected.
+  const paneY = CONSTANTS.windowSill + CONSTANTS.windowHeight / 2;
+  const shaftFootY = 0.05; // where the shaft lands, just above the planks
+  const shaftLength = Math.hypot(P.shaftInward - 0.16, paneY - shaftFootY);
+  const shaftGeo = new PlaneGeometry(CONSTANTS.windowWidth * 1.15, shaftLength);
+  const shaftMat = new MeshBasicMaterial({
+    map: makeShaftTexture(),
+    color: CONSTANTS.windowColor,
+    transparent: true,
+    opacity: P.shaftOpacity,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    side: DoubleSide,
+    fog: false,
+  });
+  for (let i = 0; i < CONSTANTS.windowsPerSide; i++) {
+    const t = i / (CONSTANTS.windowsPerSide - 1);
+    const z = -L / 2 + 4 + t * (L - 8); // same spots as the windows above
+    for (const side of [-1, 1]) {
+      const startX = side * (W / 2 - 0.16); // at the pane
+      const endX = side * (W / 2 - P.shaftInward); // at the floor pool
+      const run = endX - startX; // horizontal travel of the light
+      const rise = paneY - shaftFootY; // vertical travel (pane down to floor)
+      const shaft = new Mesh(shaftGeo, shaftMat);
+      shaft.position.set((startX + endX) / 2, (paneY + shaftFootY) / 2, z);
+      // Lean the plane (in the room's cross-section) so its bright top edge
+      // hangs at the pane and its faded bottom edge lands on the pool.
+      shaft.rotation.z = Math.atan2(run, rise);
+      softProps.add(shaft);
+    }
+  }
+
+  // Warm hanging lamps over the production line — cord, metal shade, glowing
+  // bulb, soft halo. The bulbs are self-lit and the halo is additive, so the
+  // lamps LOOK lit without spending any real lights.
+  const lineLocalZ = CONSTANTS.lineCenterZ - ROOM_CENTER_Z;
+  const cordMat = new MeshLambertMaterial({ color: P.lampShadeColor });
+  const shadeMat = new MeshLambertMaterial({
+    color: P.lampShadeColor,
+    side: DoubleSide, // the open cone shows its inside from below
+  });
+  const bulbMat = new MeshBasicMaterial({ color: P.lampGlowColor, fog: false });
+  const haloMat = new MeshBasicMaterial({
+    map: glowTexture, // the same soft radial glow the floor pools use
+    color: P.lampGlowColor,
+    transparent: true,
+    opacity: P.lampHaloOpacity,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const cordGeo = new CylinderGeometry(0.015, 0.015, H - P.lampShadeY, 6);
+  const shadeGeo = new CylinderGeometry(0.05, 0.3, 0.24, 12, 1, true);
+  const bulbGeo = new SphereGeometry(0.07, 10, 8);
+  const haloGeo = new PlaneGeometry(P.lampHaloSize, P.lampHaloSize);
+  for (const lampX of P.lampXs) {
+    const cord = new Mesh(cordGeo, cordMat);
+    cord.position.set(lampX, (H + P.lampShadeY) / 2, lineLocalZ);
+    softProps.add(cord);
+    const shade = new Mesh(shadeGeo, shadeMat);
+    shade.position.set(lampX, P.lampShadeY, lineLocalZ);
+    softProps.add(shade);
+    const bulb = new Mesh(bulbGeo, bulbMat);
+    bulb.position.set(lampX, P.lampShadeY - 0.09, lineLocalZ);
+    softProps.add(bulb);
+    const halo = new Mesh(haloGeo, haloMat);
+    halo.position.set(lampX, P.lampShadeY - 0.09, lineLocalZ + 0.05);
+    softProps.add(halo);
+  }
+
+  solidProps.position.z = ROOM_CENTER_Z;
+  softProps.position.z = ROOM_CENTER_Z;
+  world
+    .createTransformEntity(solidProps)
+    .addComponent(LocomotionEnvironment, { type: EnvironmentType.STATIC });
+  world.createTransformEntity(softProps);
+
+  // ---------------------------------------------------------------------------
   // 7. DRIFTING DUST
   // A cloud of tiny, faint motes scattered through the air. They slowly rise
   // (warm factory air drifts upward) and the whole cloud turns very gently, so
@@ -1748,6 +1990,78 @@ function makeRadialGlowTexture(): CanvasTexture {
 
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, size, size);
+
+  return new CanvasTexture(canvas);
+}
+
+// =============================================================================
+// makeTargetRingTexture
+// Draws a crisp glowing ring (a "stand here" target) in white, so the material's
+// color tints it. Used for the floor marker at the foreman's feet — it shows a
+// brand-new player exactly where to hop.
+// =============================================================================
+function makeTargetRingTexture(): CanvasTexture {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const center = size / 2;
+
+  ctx.clearRect(0, 0, size, size);
+  // A soft glow filling the disc (a gentle spotlight on the planks)...
+  const fill = ctx.createRadialGradient(center, center, 0, center, center, center);
+  fill.addColorStop(0, "rgba(255,255,255,0.30)");
+  fill.addColorStop(0.75, "rgba(255,255,255,0.10)");
+  fill.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = fill;
+  ctx.fillRect(0, 0, size, size);
+  // ...then a wide halo and a bright crisp ring on top, so it reads as a target.
+  ctx.strokeStyle = "rgba(255,255,255,0.45)";
+  ctx.lineWidth = 26;
+  ctx.beginPath();
+  ctx.arc(center, center, center - 18, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,1)";
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.arc(center, center, center - 10, 0, Math.PI * 2);
+  ctx.stroke();
+
+  return new CanvasTexture(canvas);
+}
+
+// =============================================================================
+// makeShaftTexture
+// The shape of a beam of light: bright at the top (the window pane), fading to
+// black at the bottom (the floor), with softened side edges. Black adds NOTHING
+// under additive blending, so black simply is "no light". Drawn in whites so
+// the material's color tints the beam warm.
+// =============================================================================
+function makeShaftTexture(): CanvasTexture {
+  const w = 64;
+  const h = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+
+  // Fade from full light at the top to none at the bottom...
+  const fall = ctx.createLinearGradient(0, 0, 0, h);
+  fall.addColorStop(0, "#ffffff");
+  fall.addColorStop(1, "#000000");
+  ctx.fillStyle = fall;
+  ctx.fillRect(0, 0, w, h);
+
+  // ...then soften the two side edges so the beam has no hard sides.
+  const sides = ctx.createLinearGradient(0, 0, w, 0);
+  sides.addColorStop(0, "#000000");
+  sides.addColorStop(0.25, "#ffffff");
+  sides.addColorStop(0.75, "#ffffff");
+  sides.addColorStop(1, "#000000");
+  ctx.globalCompositeOperation = "multiply";
+  ctx.fillStyle = sides;
+  ctx.fillRect(0, 0, w, h);
 
   return new CanvasTexture(canvas);
 }
@@ -2983,6 +3297,7 @@ function buildReportBoard(
     if (band === "high") highCount += 1;
     const wrap = REPORT_WRAP[score.label];
     return {
+      band, // drives the row's star grade (★★★ high / ★★ medium / ★ low)
       label: score.label,
       // Profit shows the actual coins; the percentage scores show "%"; Production
       // Output shows a whole number. (All match how the live board reads them.)
@@ -3085,6 +3400,22 @@ function buildReportBoard(
     ctx.fillStyle = style?.text ?? UI.navy;
     ctx.textAlign = "right";
     ctx.fillText(row.value, right, nameY);
+
+    // A friendly star grade beside the number — ★★★ for a great score, ★★ for
+    // a solid one, ★ for a tough day. Kids read stars at a glance, like any
+    // level-clear screen. (The gray stars are drawn first, then the earned
+    // ones are drawn over them in gold.)
+    const numberWidth = ctx.measureText(row.value).width; // number font still active
+    const starCount = row.band === "high" ? 3 : row.band === "medium" ? 2 : 1;
+    ctx.font = `${Math.round(blockH * 0.2)}px sans-serif`;
+    const allStars = "★★★";
+    const starsX =
+      right - numberWidth - Math.round(cardW * 0.02) - ctx.measureText(allStars).width;
+    ctx.textAlign = "left";
+    ctx.fillStyle = UI.track;
+    ctx.fillText(allStars, starsX, nameY);
+    ctx.fillStyle = UI.gold;
+    ctx.fillText("★".repeat(starCount), starsX, nameY);
 
     // The history line under the name, wrapped + shrunk to fit the lower half of
     // the block (so blocks never overlap).
@@ -3990,6 +4321,13 @@ export class ProductionSystem extends createSystem({
   private reportShown = false; // has the end-of-day report been built yet?
   private reportBoard: Mesh | null = null; // the report panel (faded in once shown)
   private reportFadeElapsed = 0; // seconds into the report's fade-in
+  // The celebration confetti that bursts when the report appears. All its
+  // buffers are made ONCE in spawnConfetti; advanceConfetti only writes into
+  // them (no per-frame allocation), then the whole thing is disposed.
+  private confetti: Points | null = null;
+  private confettiEntity: ReturnType<World["createTransformEntity"]> | null = null;
+  private confettiVelocities: Float32Array | null = null;
+  private confettiElapsed = 0;
 
   // --- Gentle guidance: the breathing pulse + tidy "only active controls" -----
   private pulseClock = 0; // animation clock for the breathing pulse
@@ -4092,6 +4430,7 @@ export class ProductionSystem extends createSystem({
     this.advanceBoard(delta);
     this.advanceNote(delta);
     this.advanceReport(delta);
+    this.advanceConfetti(delta);
 
     // The finishing layer of guidance: gently breathe the control to use next,
     // and fade the first-time hints through one at a time. Held back until the
@@ -5037,6 +5376,7 @@ export class ProductionSystem extends createSystem({
     this.reportBoard = board;
     this.reportFadeElapsed = 0;
     this.world.createTransformEntity(board);
+    this.spawnConfetti(); // the day is done — make it feel like a win screen
 
     // Tuck the foreman's speech panel away so his closing line doesn't overlap the
     // report (he stands to the right, his panel drifts across the report's numbers).
@@ -5049,6 +5389,79 @@ export class ProductionSystem extends createSystem({
     for (const prompt of this.queries.foremanPrompts.entities) {
       if (prompt.object3D) prompt.object3D.visible = false;
       if (prompt.hasComponent(RayInteractable)) prompt.removeComponent(RayInteractable);
+    }
+  }
+
+  // --- Celebration confetti (the report moment feels like a win screen) -------
+  // Built once when the report appears: every fleck starts along the report's
+  // top edge with an up-and-outward velocity and one of the dashboard's meter
+  // colors. advanceConfetti rains them down and fades them; then it all goes.
+  private spawnConfetti(): void {
+    const C = CONSTANTS.celebration;
+    const R = CONSTANTS.report;
+    const positions = new Float32Array(C.count * 3);
+    const colors = new Float32Array(C.count * 3);
+    const velocities = new Float32Array(C.count * 3);
+    const palette = C.colors.map((hex) => new Color(hex));
+    for (let i = 0; i < C.count; i++) {
+      positions[i * 3 + 0] = (Math.random() - 0.5) * R.width * 0.6; // spread along the report's top edge
+      positions[i * 3 + 1] = R.y + R.height / 2 + 0.15; // just above it
+      positions[i * 3 + 2] = R.z + 0.25; // a touch toward the player
+      velocities[i * 3 + 0] = (Math.random() - 0.5) * C.spread * 2;
+      velocities[i * 3 + 1] = C.riseSpeed * (0.5 + Math.random() * 0.8);
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * C.spread;
+      const color = palette[i % palette.length];
+      colors[i * 3 + 0] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
+    const material = new PointsMaterial({
+      size: C.size,
+      vertexColors: true, // each fleck keeps its own festive color
+      transparent: true,
+      opacity: 1,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    const confetti = new Points(geometry, material);
+    confetti.name = "Confetti";
+    this.confetti = confetti;
+    this.confettiVelocities = velocities;
+    this.confettiElapsed = 0;
+    this.confettiEntity = this.world.createTransformEntity(confetti);
+  }
+
+  // Rain the confetti down (simple gravity), fade it out over its last stretch,
+  // and dispose the whole burst when it is done. Writes only into the buffers
+  // made in spawnConfetti — nothing is allocated here.
+  private advanceConfetti(delta: number): void {
+    if (!this.confetti || !this.confettiVelocities) return;
+    const C = CONSTANTS.celebration;
+    this.confettiElapsed += delta;
+    if (this.confettiElapsed >= C.seconds) {
+      this.confettiEntity?.dispose(); // frees the buffers + material with it
+      this.confetti = null;
+      this.confettiVelocities = null;
+      this.confettiEntity = null;
+      return;
+    }
+    const attribute = this.confetti.geometry.attributes.position;
+    const positions = attribute.array as Float32Array;
+    const velocities = this.confettiVelocities;
+    for (let i = 0; i < velocities.length; i += 3) {
+      velocities[i + 1] -= C.gravity * delta; // gravity pulls each fleck down
+      positions[i + 0] += velocities[i + 0] * delta;
+      positions[i + 1] += velocities[i + 1] * delta;
+      positions[i + 2] += velocities[i + 2] * delta;
+    }
+    attribute.needsUpdate = true;
+    const fadeFrom = C.seconds * 0.6;
+    if (this.confettiElapsed > fadeFrom) {
+      (this.confetti.material as PointsMaterial).opacity =
+        1 - (this.confettiElapsed - fadeFrom) / (C.seconds - fadeFrom);
     }
   }
 
@@ -5141,7 +5554,11 @@ export class ProductionSystem extends createSystem({
   private queueHint(key: "start" | "again" | "foreman"): void {
     if (this.hintQueued[key]) return;
     this.hintQueued[key] = true;
-    this.hintQueue.push(HINTS[key]);
+    // The foreman hint has headset-specific wording (trigger + hop travel
+    // instead of mouse + walking) — pick it when an XR session is running.
+    const text =
+      key === "foreman" && this.world.session ? HINTS.foremanVR : HINTS[key];
+    this.hintQueue.push(text);
   }
 
   // Show the queued hints one at a time on the banner above the desk: fade in,
@@ -5330,6 +5747,32 @@ function placeForeman(world: World): void {
     .createTransformEntity(prompt)
     .addComponent(RayInteractable)
     .addComponent(ForemanPrompt);
+
+  // The glowing gold ring on the floor beside him — the "stand here" / "hop
+  // here" target (offset past the desk's edge so it is visible from spawn).
+  // It rides on the figure (local coords), lies flat, and ADDS its glow onto
+  // the floor like the window light pools, so it never hides the planks.
+  // Purely visual: the floor below stays the walkable ground.
+  const spot = new Mesh(
+    new PlaneGeometry(C.foreman.spotRadius * 2, C.foreman.spotRadius * 2),
+    new MeshBasicMaterial({
+      map: makeTargetRingTexture(),
+      color: C.foreman.spotColor,
+      transparent: true,
+      opacity: C.foreman.spotOpacity,
+      blending: AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    }),
+  );
+  spot.name = "ForemanSpot";
+  spot.rotation.x = -Math.PI / 2; // lay it flat on the floor
+  spot.position.set(
+    C.foreman.spotOffset[0],
+    0.04, // just above the planks
+    C.foreman.spotOffset[1],
+  );
+  foreman.add(spot);
 }
 
 // =============================================================================
@@ -5641,7 +6084,10 @@ export class TutorialSystem extends createSystem({
 
     const panel = this.foremanPanel();
     if (panel) {
-      (panel.userData.setText as (t: string) => void)(step.text);
+      // A step can carry headset-specific wording (controller words instead of
+      // keyboard words) — use it whenever an XR session is actually running.
+      const text = this.world.session && step.textVR ? step.textVR : step.text;
+      (panel.userData.setText as (t: string) => void)(text);
       panel.visible = true;
     }
 
