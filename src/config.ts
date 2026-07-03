@@ -787,6 +787,7 @@ export const FACTORY_TYPES: FactoryType[] = [
 // =============================================================================
 export const GROWTH_NEWS = [
   "Demand is rising! Buyers want more {product} than we can make right now. It is time to grow the factory. When people want more of something, the price goes up, so making more is worth more.",
+  "Think back to the farm — winter stopped the work for months. This factory runs every day of the year, in any season, so we can keep filling orders no matter the weather.",
   "There are three ways to grow: hire more workers, run the machine faster, or expand the line. Each one has a cost.",
   "More workers means more wages. Running faster wears the machine until it breaks down. Expanding takes a few runs before it pays off.",
   "Keep the raw materials stocked and the crew happy, and these orders are ours to fill.",

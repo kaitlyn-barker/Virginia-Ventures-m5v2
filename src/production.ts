@@ -1149,10 +1149,12 @@ export class ProductionSystem extends createSystem({
     // teaching callout — are still allowed during the tour; they don't repeat him.)
     if (!this.globals.tourDone) return;
     const factory = this.globals.activeFactory as FactoryType | null;
-    const product = factory ? factory.product : "items";
+    const product = factory ? factory.product : "goods";
+    // A clear side-by-side, with THIS run's real number — so the farm-to-factory
+    // leap is felt, not just told (learning objective #1).
     this.setNote(
-      `By hand, one worker made a few items a day. ` +
-        `Your machine just made ${this.itemsMade} ${product} in seconds!`,
+      `By hand: about 1 ${product} a day.  •  ` +
+        `Your factory this run: ${this.itemsMade}!`,
     );
   }
 
