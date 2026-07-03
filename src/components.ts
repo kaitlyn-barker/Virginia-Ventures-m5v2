@@ -1,0 +1,74 @@
+// =============================================================================
+// components.ts — the ECS tag components the systems query on.
+//
+// Extracted verbatim from the original environment.ts during the module split
+// (no behavior change). See the module map in README.md.
+// =============================================================================
+
+import {
+  Types,
+  createComponent,
+} from "@iwsdk/core";
+
+// =============================================================================
+// Setup components (tags the InputSystem and SetupSystem use)
+//
+//   FactoryChoice  — marks a welcome card and remembers WHICH business it offers
+//                    (its position 0/1/2 in FACTORY_TYPES).
+//   WelcomePart    — marks every piece of the welcome screen, so we can clear the
+//                    whole thing away once a choice is made.
+//   FactoryMachine — marks the production line, so the SetupSystem can find it
+//                    and restyle the machine. The references it needs (the shared
+//                    machine material and the three name-tags) ride along in the
+//                    line's object3D.userData.
+// =============================================================================
+export const FactoryChoice = createComponent("FactoryChoice", {
+  index: { type: Types.Int8, default: 0 },
+});
+export const WelcomePart = createComponent("WelcomePart", {});
+export const FactoryMachine = createComponent("FactoryMachine", {});
+
+// =============================================================================
+// Production-loop components (used by the ProductionSystem below)
+//
+//   ControlCard  — marks one card on the foreman's desk and remembers WHAT it
+//                  does (its `action`, one of the CONTROL values). The system
+//                  watches for a clicked ControlCard and acts on its `action`.
+//   ReadoutBoard — marks the scores board, so the system can find it and animate
+//                  the numbers when a run finishes.
+// =============================================================================
+export const ControlCard = createComponent("ControlCard", {
+  action: { type: Types.Int8, default: 0 },
+});
+export const ReadoutBoard = createComponent("ReadoutBoard", {});
+
+// Marks the small "what to do next" hint banner above the desk. The
+// ProductionSystem finds it through this tag and shows the first-time hints on it,
+// one short line at a time, then fades them away.
+export const HintSign = createComponent("HintSign", {});
+
+// =============================================================================
+// Foreman components (used by the ForemanSystem below)
+//
+//   Foreman       — marks the foreman figure. His speech panel rides along on the
+//                   figure's object3D.userData so the system can rewrite it.
+//   ForemanPrompt — marks the clickable "Next" card beside him; clicking it (or
+//                   stepping up to him) advances his news to the next beat.
+// =============================================================================
+export const Foreman = createComponent("Foreman", {});
+export const ForemanPrompt = createComponent("ForemanPrompt", {});
+
+// =============================================================================
+// Tour components (used by the TutorialSystem below)
+//
+//   TourButton — marks one of the tour's clickable buttons and remembers WHAT it
+//                does (its `action`, one of the TOUR values). The TutorialSystem
+//                watches for a clicked TourButton and acts on its `action`.
+//   TourPart   — marks every piece of the current tour UI (the goal card panel,
+//                its buttons, the tutorial's Next/Skip buttons), so the whole set
+//                can be swept away in one go when the tour moves on.
+// =============================================================================
+export const TourButton = createComponent("TourButton", {
+  action: { type: Types.Int8, default: 0 },
+});
+export const TourPart = createComponent("TourPart", {});

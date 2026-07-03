@@ -69,19 +69,21 @@ Deploys to GitHub Pages automatically via `.github/workflows/deploy.yml` on push
 ## Where the tunables live
 
 Everything balance-related is data-driven — **edit config, never hardcode numbers
-in systems.** All of it is in `src/environment.ts`:
+in systems.** All of it lives in `src/config.ts`:
 
-| What | Where (in `src/environment.ts`) |
+| What | Where (in `src/config.ts`) |
 | --- | --- |
-| Global tunables (`CONSTANTS`) | ~line 108 |
-| Business definitions (`FACTORY_TYPES`) | ~line 637 |
-| Foreman news beats (`FOREMAN_NEWS`) | ~line 725 |
-| Phase gates (`RUNS_BEFORE_COMPETITION` = 4, `RUNS_BEFORE_CLOSING` = 7) | ~line 770 |
-| Phase-3 setbacks (`PHASE3_CHALLENGES`) | ~line 799 |
-| Report text/scoring (`REPORT_*`) | ~lines 833–946 |
-| First-time hints & teaching callouts (`HINTS`, `CALLOUTS`) | ~lines 1032–1075 |
-| Guided tour (`TOUR_GOAL`, `TOUR_STEPS`) | ~lines 1076–1157 |
-| Control-card map (`CONTROL`) | ~line 1022 |
+| Room dimensions (`ROOM`) | ~line 17 |
+| Global tunables (`CONSTANTS`) | ~line 48 |
+| Business definitions (`FACTORY_TYPES`) | ~line 612 |
+| Foreman news beats (`FOREMAN_NEWS`) | ~line 698 |
+| Phase gates (`RUNS_BEFORE_COMPETITION` = 4, `RUNS_BEFORE_CLOSING` = 7) | ~lines 709–710 |
+| Idle-nudge messages (`PACING_NUDGE`) | ~line 714 |
+| Phase-3 setbacks (`PHASE3_CHALLENGES`) | ~line 756 |
+| Report text/scoring (`REPORT_SCORES`, `REPORT_SUMMARY`, `REPORT_WRAP`, `REPORT_CLOSING`) | ~lines 802–946 |
+| Control-card map (`CONTROL`) | ~line 899 |
+| First-time hints & teaching callouts (`HINTS`, `CALLOUTS`) | ~lines 917–958 |
+| Guided tour (`TOUR_GOAL`, `TOUR_STEPS`) | ~lines 959–988 |
 
 World-setup tunables (eye height, look sensitivity, and the **VR comfort
 settings** — vignette, snap turn, walk speeds, no-jump) live in the `CONSTANTS`
@@ -95,8 +97,16 @@ and tested — do not change it.**
 ```
 src/
 ├── index.ts          # World.create() — world setup, floor, mouse-look, VR comfort
-├── environment.ts    # everything else: config, components, room, stations,
-│                     #   foreman, tutorial, and all game systems (see map below)
+├── environment.ts    # buildEnvironment() — the composition root that assembles
+│                     #   the room and registers every system; re-exports for index
+├── config.ts         # all tunable data — economics, news, report text, tour script
+├── components.ts     # the ECS tag components the systems query on
+├── room.ts           # procedural textures + static scenery/mesh builders
+├── stations.ts       # text/card/panel builders (desk, boards, welcome, goal, report)
+├── systems.ts        # DustSystem, PlayerBoundsSystem, SetupSystem (+ makeDust, Dust)
+├── production.ts     # ProductionSystem — the core game loop
+├── foreman.ts        # the foreman figure + ForemanSystem (between-phase news)
+├── tutorial.ts       # TutorialSystem — opening goal card + guided tour
 ├── hud.ts            # the 2D DOM dashboard (mirrors the in-world readout board)
 ├── sfx.ts            # synthesized sound effects (no audio files — all generated)
 └── ui-style.ts       # the shared color palette (DOM HUD + in-world panels)
@@ -104,21 +114,21 @@ public/               # (currently empty — the game uses procedural canvas tex
 .github/workflows/    # deploy.yml — GitHub Pages deploy
 ```
 
-### Inside `environment.ts`
+### How the modules fit together
 
-The one large file is organized by banner comments, roughly in this order:
+The module graph is a clean DAG — the systems never import each other; they
+communicate through `world.globals` flags and shared components.
 
-- **Config** — `CONSTANTS`, `ROOM`, `FACTORY_TYPES`, `FOREMAN_NEWS`,
-  `PHASE3_CHALLENGES`, `REPORT_*`, hints/callouts, tour text
-- **Components** — all `createComponent` definitions
-- **Room** — `buildEnvironment`, procedural textures, dust, lighting, props
-- **Stations** — control desk, readout board, welcome/choice cards, report board
-- **Systems** — `DustSystem`, `PlayerBoundsSystem`, `SetupSystem`,
-  `ProductionSystem` (the core game loop), `ForemanSystem`, `TutorialSystem`
+- `config.ts` and `components.ts` are leaves (pure data / tag definitions).
+- `room.ts` → uses `config`, `components`.
+- `stations.ts` → uses `config`, `components`, `room`.
+- The systems (`systems.ts`, `production.ts`, `foreman.ts`, `tutorial.ts`) → use
+  `config`, `components`, `room`, `stations`.
+- `environment.ts` sits on top: `buildEnvironment()` builds the static room and
+  calls `registerSystem(...)` for every system, so it imports from all the above.
 
-> **Note:** this file is large. A planned refactor splits it into per-area modules
-> (`config.ts`, `components.ts`, `room.ts`, `stations.ts`, `foreman.ts`,
-> `tutorial.ts`, `production.ts`, `systems.ts`) with no behavior change.
+**Convention:** one system per file with its related components; no barrel
+`index.ts`. Keep new tunables in `config.ts`, not inline in systems.
 
 ---
 
