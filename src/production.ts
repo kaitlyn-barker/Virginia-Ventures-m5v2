@@ -33,6 +33,7 @@ import {
   Foreman,
   ForemanPrompt,
   HintSign,
+  OrderBoard,
   ReadoutBoard,
   RestartButton,
 } from "./components.js";
@@ -41,11 +42,13 @@ import {
   CONSTANTS,
   CONTROL,
   HINTS,
+  ORDERS,
   PHASE3_CHALLENGES,
   fillNews,
 } from "./config.js";
 import type {
   FactoryType,
+  Order,
   Phase3Challenge,
   SpeedSetting,
 } from "./config.js";
@@ -63,6 +66,7 @@ import {
   repairCardText,
   speedCardText,
 } from "./stations.js";
+import type { OrderRow } from "./stations.js";
 
 // =============================================================================
 // ScoreTween — one in-flight number-and-bar animation on the readout board.
@@ -117,6 +121,7 @@ export class ProductionSystem extends createSystem({
   foremen: { required: [Foreman] }, // the foreman (to tuck his speech panel away when the report appears)
   foremanPrompts: { required: [ForemanPrompt] }, // his "Next" news card (tucked away once the day is over)
   restartPressed: { required: [RestartButton, Pressed] }, // the report's "Play Again" button was clicked
+  orderBoards: { required: [OrderBoard] }, // the buyer-orders board beside the readout board
 }) {
   // --- Current settings + run state ---
   private speedIndex = CONSTANTS.defaultSpeedIndex; // 0=Slow, 1=Medium, 2=Fast
@@ -213,6 +218,21 @@ export class ProductionSystem extends createSystem({
   private confettiVelocities: Float32Array | null = null;
   private confettiElapsed = 0;
 
+  // --- Buyer orders (the goals that make every control matter) ---------------
+  private orderBoard: Mesh | null = null; // the order board beside the readout board
+  // The live orders, in the order posted. Scratch state (not entity tracking) —
+  // safe to hold on the system, like the score tweens.
+  private activeOrders: Array<{
+    cfg: Order; // the config entry (buyer, quantity, deadline, bonus)
+    progress: number; // how many goods have been made toward it
+    runsLeft: number; // runs remaining before the deadline
+    status: "open" | "filled" | "lost"; // open, filled ✓, or taken by the rival
+  }> = [];
+  private ordersPosted: Record<string, boolean> = {}; // which phases' orders are out
+  private ordersFilled = 0; // how many have been filled (shown on the report)
+  private stealChecked = false; // has the competitor's one-time order grab run?
+  private orderPopElapsed = -1; // >=0 while the little "stamp" pop plays (-1 = idle)
+
   // --- Gentle guidance: the breathing pulse + tidy "only active controls" -----
   private pulseClock = 0; // animation clock for the breathing pulse
   private controlsLaidOut = false; // have we done the first show/hide + even layout of the cards?
@@ -269,6 +289,11 @@ export class ProductionSystem extends createSystem({
       Sfx.clunk();
       window.location.reload();
     });
+
+    // Grab the order board the moment it appears (placed with the cockpit).
+    this.queries.orderBoards.subscribe("qualify", (entity) => {
+      this.orderBoard = (entity.object3D as Mesh) ?? null;
+    });
   }
 
   update(delta: number): void {
@@ -315,6 +340,22 @@ export class ProductionSystem extends createSystem({
     // The foreman's closing news calls the end of the day — show the final
     // Production Report once, the first time we see the flag.
     if (this.globals.dayOver && !this.reportShown) this.showReport();
+
+    // Post buyer orders as the day's phases open. The tutorial order appears once
+    // the cockpit is up and the tour is over (guaranteed fillable at Slow); the
+    // bigger "growth" orders appear when the foreman says demand is rising; and
+    // when the competitor opens, it grabs any order we are too far behind on.
+    if (this.orderBoard && this.globals.tourDone && !this.ordersPosted.tutorial) {
+      this.postOrders("tutorial");
+    }
+    if (this.orderBoard && this.globals.demandRising && !this.ordersPosted.growth) {
+      this.postOrders("growth");
+    }
+    if (this.globals.competitionOpen && !this.stealChecked) {
+      this.stealChecked = true;
+      this.competitorSteal();
+    }
+    if (this.orderPopElapsed >= 0) this.advanceOrderPop(delta);
 
     if (this.running) this.advanceRun(delta);
     if (this.repairing) this.advanceRepair(delta);
@@ -716,6 +757,11 @@ export class ProductionSystem extends createSystem({
     this.globals.runsCompleted = this.runsFinished;
     if (this.runsFinished === 1) this.queueHint("again");
     if (this.runsFinished === 2) this.queueHint("foreman");
+
+    // Credit this batch toward every open order, and settle any that just filled
+    // or ran out of time. (A broken run makes no goods, so it never calls this —
+    // a breakdown doesn't burn an order's deadline.)
+    this.advanceOrders(this.itemsMade);
   }
 
   // A broken run: no goods, a repair cost, a frustrated crew — but fixing it
@@ -912,6 +958,125 @@ export class ProductionSystem extends createSystem({
     const rev = Math.round(revenue);
     const profit = Math.round(revenue * margin);
     return { profit, costs: Math.max(0, rev - profit) };
+  }
+
+  // --- Buyer orders ----------------------------------------------------------
+  // Post the orders for one phase (tutorial / growth) onto the board.
+  private postOrders(phase: "tutorial" | "growth"): void {
+    if (!this.orderBoard) return;
+    this.ordersPosted[phase] = true;
+    for (const cfg of ORDERS.filter((o) => o.phase === phase)) {
+      this.activeOrders.push({
+        cfg,
+        progress: 0,
+        runsLeft: cfg.deadlineRuns,
+        status: "open",
+      });
+    }
+    this.refreshOrderBoard();
+    this.popOrderBoard();
+  }
+
+  // Rebuild the board's display rows from the live orders and repaint it.
+  private refreshOrderBoard(): void {
+    if (!this.orderBoard) return;
+    const factory = this.globals.activeFactory as FactoryType | null;
+    const product = factory?.product ?? "goods";
+    const rows: OrderRow[] = this.activeOrders.map((o) => ({
+      buyer: o.cfg.buyer,
+      target: `${o.cfg.quantity} ${product}`,
+      quantity: o.cfg.quantity,
+      progress: o.progress,
+      runsLeft: o.runsLeft,
+      bonus: o.cfg.bonus,
+      status: o.status,
+    }));
+    // Mutate the SAME array the board's redraw() closes over (don't replace it).
+    const live = this.orderBoard.userData.orders as OrderRow[];
+    live.length = 0;
+    live.push(...rows);
+    (this.orderBoard.userData.redraw as () => void)();
+  }
+
+  // Credit a batch toward every open order; settle any that just filled (reward!)
+  // or ran out of runs (the rival gets it).
+  private advanceOrders(items: number): void {
+    if (this.activeOrders.length === 0) return;
+    let resolved = false;
+    for (const o of this.activeOrders) {
+      if (o.status !== "open") continue;
+      o.progress += items;
+      if (o.progress >= o.cfg.quantity) {
+        o.status = "filled";
+        this.ordersFilled += 1;
+        this.grantOrderBonus();
+        Sfx.coin();
+        this.setNote(`Order filled! ${o.cfg.buyer} paid a $${o.cfg.bonus} bonus.`);
+        resolved = true;
+      } else {
+        o.runsLeft -= 1;
+        if (o.runsLeft <= 0) {
+          o.status = "lost";
+          this.setNote(
+            `Out of time — the rival factory filled ${o.cfg.buyer.toLowerCase()}'s order.`,
+          );
+          resolved = true;
+        }
+      }
+    }
+    this.refreshOrderBoard();
+    if (resolved) this.popOrderBoard();
+  }
+
+  // A filled order rewards the factory. Until Phase 3.1 gives coins a real home,
+  // the bonus eases the profit-cost burden so the Profit meter bumps up (the
+  // report's "Orders filled" line is the durable reward).
+  private grantOrderBonus(): void {
+    const factory = this.globals.activeFactory as FactoryType | null;
+    if (!factory) return;
+    this.costBurden = Math.max(0, this.costBurden - CONSTANTS.orders.fillBonusMargin);
+    const fromMargin = this.marginValue;
+    this.marginValue = this.marginFor(factory, CONSTANTS.speeds[this.speedIndex]);
+    this.tweenCostProfit(this.lastRevenue, fromMargin);
+  }
+
+  // When the competitor opens, it grabs any still-open order we are too far behind
+  // on — a survivable but real loss that makes Phase 3 land.
+  private competitorSteal(): void {
+    let stole = false;
+    for (const o of this.activeOrders) {
+      if (o.status !== "open") continue;
+      if (o.progress / o.cfg.quantity < CONSTANTS.orders.stealBehind) {
+        o.status = "lost";
+        stole = true;
+      }
+    }
+    if (stole) {
+      this.refreshOrderBoard();
+      this.popOrderBoard();
+      this.setNote("The new factory grabbed an order we were too slow to fill.");
+    }
+  }
+
+  // A quick "stamp" scale-pop on the order board when an order resolves.
+  private popOrderBoard(): void {
+    this.orderPopElapsed = 0;
+  }
+  private advanceOrderPop(delta: number): void {
+    if (!this.orderBoard) {
+      this.orderPopElapsed = -1;
+      return;
+    }
+    const dur = CONSTANTS.orders.popSeconds;
+    this.orderPopElapsed += delta;
+    if (this.orderPopElapsed >= dur) {
+      this.orderBoard.scale.setScalar(1);
+      this.orderPopElapsed = -1;
+      return;
+    }
+    // A gentle up-and-back bump (0 → +8% → 0) over the pop's duration.
+    const t = this.orderPopElapsed / dur;
+    this.orderBoard.scale.setScalar(1 + 0.08 * Math.sin(Math.PI * t));
   }
 
   // Glide the Costs + Profit meters from one (revenue, margin) breakdown to the
@@ -1264,6 +1429,8 @@ export class ProductionSystem extends createSystem({
       this.marginValue, // final profit SHARE (0..1) — grades the Profit score
       this.profitCostsFor(this.lastRevenue, this.marginValue).profit, // final Profit, in coins (shown)
       factory,
+      this.ordersFilled, // how many buyer orders were filled (recap, not graded)
+      this.activeOrders.length, // how many were posted in all
     );
     board.position.set(0, C.report.y, C.report.z); // float it in front of the player
     this.reportBoard = board;

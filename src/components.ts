@@ -42,6 +42,11 @@ export const ControlCard = createComponent("ControlCard", {
 });
 export const ReadoutBoard = createComponent("ReadoutBoard", {});
 
+// Marks the order board (beside the readout board). The ProductionSystem finds it
+// through this tag to post buyer orders, advance their progress each run, and
+// stamp them FILLED or LOST.
+export const OrderBoard = createComponent("OrderBoard", {});
+
 // Marks the small "what to do next" hint banner above the desk. The
 // ProductionSystem finds it through this tag and shows the first-time hints on it,
 // one short line at a time, then fades them away.

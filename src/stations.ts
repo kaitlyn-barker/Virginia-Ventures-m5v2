@@ -30,6 +30,7 @@ import {
   ControlCard,
   FactoryChoice,
   HintSign,
+  OrderBoard,
   ReadoutBoard,
   TourButton,
   TourPart,
@@ -794,6 +795,186 @@ export function placeReadoutBoard(world: World): void {
 }
 
 // =============================================================================
+// OrderRow — one buyer order as the order board draws it. The ProductionSystem
+// fills these in (via board.userData.orders) and calls redraw().
+// =============================================================================
+export type OrderRow = {
+  buyer: string; // "The railroad"
+  target: string; // "40 planks" (quantity + product)
+  quantity: number; // how many are needed (drives the bar)
+  progress: number; // how many have been made toward it
+  runsLeft: number; // runs remaining before the deadline
+  bonus: number; // coin reward, shown as "$60"
+  status: "open" | "filled" | "lost"; // open, FILLED ✓, or taken by the rival
+};
+
+// =============================================================================
+// buildOrderBoard
+// A rounded cream card (like the readout board) that lists the current buyer
+// orders. Each row shows who wants what, a progress bar toward the quantity, the
+// coin reward, and either the runs left, a green "FILLED ✓" stamp, or a red
+// "Rival took it". Holds `userData.orders` (an OrderRow[]) + `userData.redraw()`;
+// the ProductionSystem edits the array and calls redraw() as runs complete.
+// =============================================================================
+export function buildOrderBoard(): Mesh {
+  const O = CONSTANTS.orders;
+  const pxPerMeter = 320;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(O.width * pxPerMeter);
+  canvas.height = Math.round(O.height * pxPerMeter);
+  const ctx = canvas.getContext("2d")!;
+  const W = canvas.width;
+  const H = canvas.height;
+
+  const orders: OrderRow[] = [];
+
+  const redraw = (): void => {
+    ctx.clearRect(0, 0, W, H);
+
+    // Card + navy border + soft shadow.
+    const M = Math.round(H * 0.025);
+    const cardX = M;
+    const cardY = M;
+    const cardW = W - M * 2;
+    const cardH = H - M * 2;
+    const radius = Math.round(H * 0.05);
+    drawCard(ctx, cardX, cardY, cardW, cardH, {
+      fill: UI.cream,
+      stroke: UI.navy,
+      lineWidth: 6,
+      radius,
+      shadow: true,
+    });
+
+    // Teal title band, clipped to the rounded top corners.
+    const titleH = Math.round(cardH * 0.13);
+    ctx.save();
+    roundRectPath(ctx, cardX, cardY, cardW, cardH, radius);
+    ctx.clip();
+    ctx.fillStyle = new Color(CONSTANTS.tealColor).getStyle();
+    ctx.fillRect(cardX, cardY, cardW, titleH);
+    ctx.restore();
+    ctx.fillStyle = UI.white;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `bold ${Math.round(titleH * 0.52)}px sans-serif`;
+    ctx.fillText("📋 Orders", W / 2, cardY + titleH / 2);
+
+    const areaTop = cardY + titleH;
+    const areaBottom = cardY + cardH - Math.round(cardH * 0.03);
+    const pad = cardX + Math.round(cardW * 0.06);
+    const right = cardX + cardW - Math.round(cardW * 0.06);
+    const innerW = right - pad;
+
+    // Empty state: no orders posted yet.
+    if (orders.length === 0) {
+      ctx.fillStyle = UI.navy;
+      ctx.textAlign = "center";
+      ctx.font = `${Math.round(cardH * 0.06)}px sans-serif`;
+      ctx.fillText("Waiting for the first order…", W / 2, (areaTop + areaBottom) / 2);
+      return;
+    }
+
+    const shown = orders.slice(0, O.maxVisible);
+    const blockH = (areaBottom - areaTop) / shown.length;
+
+    shown.forEach((order, i) => {
+      const top = areaTop + i * blockH;
+      const statusColor =
+        order.status === "filled"
+          ? new Color(O.filledColor).getStyle()
+          : order.status === "lost"
+            ? new Color(O.lostColor).getStyle()
+            : new Color(O.openColor).getStyle();
+
+      // Row 1: "The railroad wants" (left) + "$60" reward (right).
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "left";
+      ctx.font = `bold ${Math.round(blockH * 0.2)}px sans-serif`;
+      ctx.fillStyle = UI.navy;
+      const line1Y = top + blockH * 0.2;
+      ctx.fillText(`${order.buyer} wants`, pad, line1Y);
+      ctx.textAlign = "right";
+      ctx.fillStyle = UI.goldText;
+      ctx.fillText(`$${order.bonus}`, right, line1Y);
+
+      // Row 2: the target ("40 planks"), navy, a touch bigger.
+      ctx.textAlign = "left";
+      ctx.fillStyle = UI.navy;
+      ctx.font = `bold ${Math.round(blockH * 0.24)}px sans-serif`;
+      ctx.fillText(order.target, pad, top + blockH * 0.42);
+
+      // Progress bar (track + fill), colored by status.
+      const barY = top + blockH * 0.58;
+      const barH = Math.round(blockH * 0.12);
+      const frac = Math.max(0, Math.min(1, order.progress / order.quantity));
+      roundRectPath(ctx, pad, barY, innerW, barH, barH / 2);
+      ctx.fillStyle = UI.track;
+      ctx.fill();
+      if (frac > 0) {
+        roundRectPath(ctx, pad, barY, Math.max(barH, innerW * frac), barH, barH / 2);
+        ctx.fillStyle = statusColor;
+        ctx.fill();
+      }
+
+      // Row 3: progress count + status.
+      const line3Y = top + blockH * 0.82;
+      ctx.textBaseline = "middle";
+      ctx.font = `${Math.round(blockH * 0.17)}px sans-serif`;
+      ctx.textAlign = "left";
+      ctx.fillStyle = UI.navy;
+      ctx.fillText(`${Math.min(order.progress, order.quantity)} / ${order.quantity}`, pad, line3Y);
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = statusColor;
+      ctx.font = `bold ${Math.round(blockH * 0.18)}px sans-serif`;
+      const statusText =
+        order.status === "filled"
+          ? "FILLED ✓"
+          : order.status === "lost"
+            ? "Rival took it"
+            : `${order.runsLeft} ${order.runsLeft === 1 ? "run" : "runs"} left`;
+      ctx.fillText(statusText, right, line3Y);
+
+      // A thin divider under each row except the last.
+      if (i < shown.length - 1) {
+        ctx.strokeStyle = UI.track;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pad, top + blockH);
+        ctx.lineTo(right, top + blockH);
+        ctx.stroke();
+      }
+    });
+  };
+
+  redraw();
+
+  const board = makeCanvasPlane(canvas, O.width, O.height, true);
+  board.name = "OrderBoard";
+  board.userData.orders = orders;
+  board.userData.redraw = (): void => {
+    redraw();
+    (board.material as MeshBasicMaterial).map!.needsUpdate = true;
+  };
+  return board;
+}
+
+// =============================================================================
+// placeOrderBoard
+// Mounts the order board just to the LEFT of the readout board (same height,
+// depth, and downward tilt), tagged OrderBoard so the ProductionSystem can find
+// it. Called alongside placeReadoutBoard when the cockpit appears.
+// =============================================================================
+export function placeOrderBoard(world: World): void {
+  const C = CONSTANTS;
+  const board = buildOrderBoard();
+  board.position.set(C.orders.x, C.boardY, C.lineCenterZ);
+  board.rotation.x = C.boardTilt; // share the readout board's gentle downward tilt
+  world.createTransformEntity(board).addComponent(OrderBoard);
+}
+
+// =============================================================================
 // reportBandFor
 // Sorts one final score into a simple high / medium / low band using the cutoffs
 // on its REPORT_SCORES entry. The value is in the SAME units as the cutoffs:
@@ -853,6 +1034,8 @@ export function buildReportBoard(
   margin: number, // final profit SHARE (0..1) — used to GRADE the Profit score
   profitCoins: number, // final Profit in coins — what the Profit row DISPLAYS
   factory: FactoryType | null, // the chosen business (fills in "{product}")
+  ordersFilled: number = 0, // buyer orders filled (a recap line, NOT a graded score)
+  ordersTotal: number = 0, // buyer orders posted in all
 ): Mesh {
   const C = CONSTANTS;
   const R = C.report;
@@ -956,9 +1139,13 @@ export function buildReportBoard(
   }
   ctx.fillText(title, W / 2, cardY + titleH / 2);
 
-  // The three score blocks fill the space between the title and summary bands.
+  // The three score blocks fill the space between the title and summary bands,
+  // reserving a thin strip just above the summary for the buyer-orders recap line
+  // (a plain "Orders filled: N of M" — a recap, not a graded score).
   const areaTop = cardY + titleH;
-  const blockH = (summaryTop - areaTop) / rows.length;
+  const ordersStripH = ordersTotal > 0 ? Math.round(cardH * 0.08) : 0;
+  const blocksBottom = summaryTop - ordersStripH;
+  const blockH = (blocksBottom - areaTop) / rows.length;
   const pad = cardX + Math.round(cardW * 0.05);
   const right = cardX + cardW - Math.round(cardW * 0.05);
   const innerW = right - pad;
@@ -1023,6 +1210,20 @@ export function buildReportBoard(
       ctx.stroke();
     }
   });
+
+  // Buyer-orders recap line in the reserved strip (navy, centered) — a plain
+  // count, deliberately NOT a graded score, so the three-score rubric is intact.
+  if (ordersTotal > 0) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = UI.navy;
+    ctx.font = `bold ${Math.round(ordersStripH * 0.5)}px sans-serif`;
+    ctx.fillText(
+      `📋 Orders filled: ${ordersFilled} of ${ordersTotal}`,
+      W / 2,
+      blocksBottom + ordersStripH / 2,
+    );
+  }
 
   // Dynamic summary line (white on the gold band), shrunk to fit.
   ctx.textAlign = "center";

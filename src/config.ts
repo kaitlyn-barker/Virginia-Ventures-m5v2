@@ -222,6 +222,26 @@ export const CONSTANTS = {
     seedMargin: 0.22, // starting profit share of a sale (0..1)
   },
 
+  // --- Order board (the goal that makes every control matter) -----------------
+  // A small board beside the readout board posts buyer ORDERS ("the railroad
+  // needs 40 planks by the closing whistle"). Each run's output counts toward
+  // every open order; fill one before its deadline (in runs) for a reward, or the
+  // rival factory takes it. Sizes/positions mirror the readout board so the two
+  // sit side by side; the order data itself lives in the ORDERS list below.
+  orders: {
+    width: 2.7, // board size left-to-right (meters)
+    height: 2.4, // board size up-and-down (meters) — matches the readout board
+    x: -3.9, // to the LEFT of the readout board (which is centered at x 0, ~4.4 wide)
+    // y + z + tilt are taken from the readout board at build time (boardY / lineCenterZ / boardTilt)
+    maxVisible: 3, // most order rows shown at once
+    fillBonusMargin: 0.12, // a filled order bumps Profit by this (a placeholder reward until Phase 3.1 adds real coins)
+    stealBehind: 0.6, // when the competitor opens, it takes any open order less than this fraction filled
+    popSeconds: 0.4, // how long the little "stamp" scale-pop plays when an order resolves
+    openColor: 0x1b6a6a, // teal — an order still in progress (the course accent)
+    filledColor: 0x2e7d32, // green — FILLED ✓
+    lostColor: 0xb3402e, // red — the rival took it
+  },
+
   // --- Name-tags on the production line (intake / machine / output) ---
   // Small teal tags, in the same crisp style as the control cards. They start
   // with generic words ("Material" / "Machine" / "Product") and get filled in
@@ -780,6 +800,63 @@ export const PHASE3_CHALLENGES: Phase3Challenge[] = [
     name: "DELAYED SHIPMENT",
     announce:
       "Raw materials dropped sharply, and new orders now take longer to arrive. Slow the line or reorder early to cope.",
+  },
+];
+
+// =============================================================================
+// ORDERS — the buyer contracts posted on the order board. Each order asks for a
+// QUANTITY of the factory's product within a DEADLINE (counted in production
+// runs) for a coin BONUS. They are the game's goals: every run's output counts
+// toward every open order, so hiring / speeding up / expanding all become "can I
+// fill this in time?" instead of "what does this button do?".
+//
+// `phase` decides WHEN an order is posted:
+//   "tutorial"    — the moment the cockpit appears (tuned to be fillable even at
+//                   Slow, so a new player succeeds at their first order).
+//   "growth"      — when the foreman says demand is rising (bigger, so Slow-only
+//                   play misses the deadline — this is what makes hiring / going
+//                   faster / expanding feel NEEDED rather than announced).
+// When the competitor opens (Phase 3), any still-open order that is less than
+// `orders.stealBehind` filled is TAKEN by the rival — a survivable but real loss.
+//
+// `{product}` is filled in from the chosen business. Buyers name real Virginia
+// trade of the era (the railroad, the port at Norfolk, the general store) to tie
+// the goal back to VS.13. Sizes assume ~5–9 goods per Slow run (+6 per worker,
+// ×3 at Fast); tune quantity/deadline here to make an order easier or harder.
+// =============================================================================
+export type Order = {
+  id: string; // short internal id
+  buyer: string; // who wants the goods (names real Virginia trade)
+  quantity: number; // how many {product} they want
+  deadlineRuns: number; // runs allowed before the deadline passes
+  bonus: number; // coins paid for filling it (shown now; a real payout in Phase 3.1)
+  phase: "tutorial" | "growth"; // when it is posted
+};
+
+export const ORDERS: Order[] = [
+  {
+    id: "store",
+    buyer: "The general store",
+    quantity: 14, // small — a few Slow runs fill it
+    deadlineRuns: 4,
+    bonus: 10,
+    phase: "tutorial",
+  },
+  {
+    id: "railroad",
+    buyer: "The railroad",
+    quantity: 40, // big — Slow-only misses this; you must hire / speed up / expand
+    deadlineRuns: 5,
+    bonus: 60,
+    phase: "growth",
+  },
+  {
+    id: "port",
+    buyer: "A Norfolk merchant",
+    quantity: 24, // medium — reachable, but not while dawdling
+    deadlineRuns: 4,
+    bonus: 45,
+    phase: "growth",
   },
 ];
 

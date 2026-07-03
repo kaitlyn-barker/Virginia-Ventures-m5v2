@@ -44,6 +44,7 @@ import {
   makeTextPlane,
   placeControlStation,
   placeReadoutBoard,
+  placeOrderBoard,
 } from "./stations.js";
 
 // =============================================================================
@@ -186,6 +187,7 @@ export class TutorialSystem extends createSystem({
     if (this.cockpitPlaced) return;
     placeControlStation(this.world);
     placeReadoutBoard(this.world);
+    placeOrderBoard(this.world);
     placeForeman(this.world);
     this.cockpitPlaced = true;
   }
