@@ -33,14 +33,15 @@ import {
   ROOM_CENTER_Z,
   FLOOR_MARGIN,
 } from "./environment.js";
+import { setupBrowserControls } from "./controls.js";
 
 // -----------------------------------------------------------------------------
 // CONSTANTS — the few tunable numbers that belong to world setup.
 // -----------------------------------------------------------------------------
 const CONSTANTS = {
   eyeHeight: 1.6, // standing eye height, in meters (where the camera sits)
-  lookSensitivity: 0.0025, // how fast right-drag turns the view
-  maxPitch: Math.PI / 2 - 0.05, // stop just short of straight up/down so the view can't flip over
+  // (Look/move feel for the flat screen lives with the code that uses it, in
+  // controls.ts.)
 
   // --- VR comfort (anti motion-sickness) --------------------------------------
   // Smooth gliding is the #1 motion-sickness trigger in VR, especially for kids.
@@ -93,8 +94,6 @@ World.create(document.getElementById("scene-container") as HTMLDivElement, {
     },
   },
 }).then((world) => {
-  const { camera } = world;
-
   // ---------------------------------------------------------------------------
   // COMFORT: gentle glide speed. The engine's default glide (5 m/s) feels like
   // sprinting in a headset and is the main cause of motion sickness. Sliding
@@ -150,77 +149,11 @@ World.create(document.getElementById("scene-container") as HTMLDivElement, {
   buildEnvironment(world);
 
   // ---------------------------------------------------------------------------
-  // BROWSER MOUSE-LOOK — drag with the RIGHT mouse button to look around.
-  // The LEFT mouse button is left free for clicking on objects (IWSDK forwards
-  // those clicks to interactive entities for us). In a headset the controls are
-  // handled by the actual head tracking, so we skip mouse-look while in XR.
-  //
-  // The official guidance is "rotate world.camera yourself" for first-person
-  // browser views, which is exactly what this does.
+  // FLAT-SCREEN CONTROLS — look + move for a mouse/keyboard AND a touchscreen,
+  // plus the one-time controls hint and the teacher "R" restart key. All of it
+  // lives in controls.ts and only runs in the browser view (a headset uses head
+  // tracking + thumbsticks). The official guidance is "rotate world.camera
+  // yourself" for first-person browser views, which is what it does.
   // ---------------------------------------------------------------------------
-  const canvas = world.renderer.domElement;
-
-  // 'YXZ' rotation order means: turn left/right first (yaw, around Y), then look
-  // up/down (pitch, around X). That keeps the horizon level as you drag.
-  camera.rotation.order = "YXZ";
-  let yaw = camera.rotation.y; // current left/right angle
-  let pitch = camera.rotation.x; // current up/down angle
-
-  let dragging = false;
-  let lastX = 0;
-  let lastY = 0;
-
-  // Don't pop up the browser's right-click menu while we're using right-drag.
-  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
-
-  canvas.addEventListener("pointerdown", (event) => {
-    if (event.button !== 2) return; // 2 = right mouse button only
-    dragging = true;
-    lastX = event.clientX;
-    lastY = event.clientY;
-    canvas.setPointerCapture(event.pointerId); // keep getting moves even if the cursor leaves
-  });
-
-  canvas.addEventListener("pointerup", (event) => {
-    if (event.button !== 2) return;
-    dragging = false;
-    canvas.releasePointerCapture(event.pointerId);
-  });
-
-  canvas.addEventListener("pointermove", (event) => {
-    if (!dragging) return;
-    // In a headset the head controls the view, so ignore the mouse there.
-    if (world.visibilityState.value !== VisibilityState.NonImmersive) return;
-
-    // How far the mouse moved since the last frame.
-    const deltaX = event.clientX - lastX;
-    const deltaY = event.clientY - lastY;
-    lastX = event.clientX;
-    lastY = event.clientY;
-
-    yaw -= deltaX * CONSTANTS.lookSensitivity; // drag right -> turn right
-    pitch -= deltaY * CONSTANTS.lookSensitivity; // drag down -> look down
-
-    // Clamp up/down so you can't tip past straight up or down (no flipping).
-    pitch = Math.max(-CONSTANTS.maxPitch, Math.min(CONSTANTS.maxPitch, pitch));
-
-    camera.rotation.set(pitch, yaw, 0);
-  });
-
-  // ---------------------------------------------------------------------------
-  // TEACHER RESTART — press "R" to start the whole day over. This is an escape
-  // hatch for rescuing a stuck session (a factory the class wants to abandon, a
-  // student who got lost mid-tour). It asks for confirmation first so a stray
-  // keypress can't wipe a good run, and it only listens on the flat screen — a
-  // headset has no keyboard, and the report's own "Play Again" button covers the
-  // in-VR case. A reload returns to a clean business picker (all state is in
-  // memory), so the class can pick a different business right away.
-  // ---------------------------------------------------------------------------
-  window.addEventListener("keydown", (event) => {
-    if (event.key !== "r" && event.key !== "R") return;
-    if (world.visibilityState.value !== VisibilityState.NonImmersive) return; // browser only
-    if (window.confirm("Restart the factory day? This starts over from the business picker.")) {
-      window.location.reload();
-    }
-  });
+  setupBrowserControls(world);
 });
