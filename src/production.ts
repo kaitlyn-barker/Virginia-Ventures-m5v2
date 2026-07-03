@@ -78,6 +78,7 @@ import {
 } from "./stations.js";
 import type { OrderRow } from "./stations.js";
 import { resetGame } from "./reset.js";
+import { showReportSummary } from "./report-summary.js";
 
 // =============================================================================
 // ScoreTween — one in-flight number-and-bar animation on the readout board.
@@ -1825,6 +1826,99 @@ export class ProductionSystem extends createSystem({
     }
   }
 
+  // --- Session summary (the debrief / teacher output) ------------------------
+  // Gather the day's outcome in one place — used by the class code AND the plain-
+  // text "Copy my report".
+  private dayStats(): {
+    factory: FactoryType | null;
+    biz: string;
+    output: number;
+    sat: number;
+    profit: number;
+    workers: number;
+    runs: number;
+    ordersFilled: number;
+    ordersTotal: number;
+    predRight: number;
+    predTotal: number;
+    expanded: boolean;
+    challengeName: string;
+    challengeCode: string;
+    safety: "guards" | "push" | null;
+  } {
+    const factory = this.globals.activeFactory as FactoryType | null;
+    const biz =
+      factory?.id === "textile" ? "TEX" : factory?.id === "iron" ? "IRN" : "LUM";
+    const challengeCode = this.challenge
+      ? { breakdown: "BRK", delay: "DLY", walkout: "WLK", pricewar: "PRC" }[
+          this.challenge.id
+        ]
+      : "NON";
+    return {
+      factory,
+      biz,
+      output: Math.round(this.outputValue),
+      sat: Math.round(this.satisfactionValue * 100),
+      profit: this.profitCostsFor(this.lastRevenue, this.marginValue).profit,
+      workers: this.workers,
+      runs: this.runsFinished,
+      ordersFilled: this.ordersFilled,
+      ordersTotal: this.activeOrders.length,
+      predRight: this.predictionsRight,
+      predTotal: this.predictionsTotal,
+      expanded: this.expandState === "done",
+      challengeName: this.challenge?.name ?? "none",
+      challengeCode,
+      safety: this.safetyDecision,
+    };
+  }
+
+  // A short, human-readable code encoding the day's key results, so a teacher can
+  // collect outcomes on paper or in an LMS with ZERO backend. Format is documented
+  // in the README. Example: IRN-O194-S47-P164-W3-F2-G2-EXP-CBRK-KGRD
+  private buildClassCode(): string {
+    const s = this.dayStats();
+    const parts = [
+      s.biz,
+      `O${s.output}`,
+      `S${s.sat}`,
+      `P${s.profit}`,
+      `W${s.workers}`,
+      `F${s.ordersFilled}`,
+      `G${s.predRight}`,
+    ];
+    if (s.expanded) parts.push("EXP");
+    parts.push(`C${s.challengeCode}`);
+    if (s.safety) parts.push(`K${s.safety === "guards" ? "GRD" : "PSH"}`);
+    return parts.join("-");
+  }
+
+  // The full plain-text "My Day" recap the Copy button puts on the clipboard.
+  private buildReportText(): string {
+    const s = this.dayStats();
+    const safetyText =
+      s.safety === "guards"
+        ? "added safety guards"
+        : s.safety === "push"
+          ? "pushed on"
+          : "no safety event";
+    return [
+      "The Factory Floor — My Day",
+      `Business: ${s.factory?.name ?? "—"}`,
+      `Production runs: ${s.runs}`,
+      `Production Output: ${s.output}`,
+      `Worker Satisfaction: ${s.sat}%`,
+      `Profit: $${s.profit}`,
+      `Workers hired: ${s.workers}`,
+      `Orders filled: ${s.ordersFilled} of ${s.ordersTotal}`,
+      `Predictions right: ${s.predRight} of ${s.predTotal}`,
+      `Expanded the line: ${s.expanded ? "yes" : "no"}`,
+      `Challenge faced: ${s.challengeName}`,
+      `Worker safety choice: ${safetyText}`,
+      `Class code: ${this.buildClassCode()}`,
+    ].join("\n");
+  }
+
   // --- End of Day Production Report ------------------------------------------
   // The foreman has called the end of the day. Read the three FINAL scores
   // straight from our live values — the exact numbers the board ended on, NOT
@@ -1836,18 +1930,31 @@ export class ProductionSystem extends createSystem({
     Sfx.fanfare(); // a short, happy fanfare as the day's report appears
     const C = CONSTANTS;
     const factory = this.globals.activeFactory as FactoryType | null;
+    // The plain recap lines shown under the scores (NOT graded): orders filled,
+    // predictions right, the safety choice, and the class code that lets a teacher
+    // collect the day's outcome on paper / in an LMS with no backend.
+    const recapLines: string[] = [];
+    if (this.activeOrders.length > 0) {
+      recapLines.push(`📋 Orders filled: ${this.ordersFilled} of ${this.activeOrders.length}`);
+    }
+    if (this.predictionsTotal > 0) {
+      recapLines.push(`🔮 Predictions right: ${this.predictionsRight} of ${this.predictionsTotal}`);
+    }
+    if (this.safetyDecision === "guards") recapLines.push("🛡️ Worker safety: added guards");
+    else if (this.safetyDecision === "push") recapLines.push("⏩ Worker safety: pushed on");
+    recapLines.push(`🔖 Class code: ${this.buildClassCode()}`);
+
     const board = buildReportBoard(
       this.outputValue, // final Production Output (the live running total)
       this.satisfactionValue, // final Worker Satisfaction (0..1)
       this.marginValue, // final profit SHARE (0..1) — grades the Profit score
       this.profitCostsFor(this.lastRevenue, this.marginValue).profit, // final Profit, in coins (shown)
       factory,
-      this.ordersFilled, // how many buyer orders were filled (recap, not graded)
-      this.activeOrders.length, // how many were posted in all
-      this.predictionsRight, // how many predictions the game bore out
-      this.predictionsTotal, // how many predictions were made
-      this.safetyDecision, // the worker-safety choice they made (or null if it never fired)
+      recapLines,
     );
+
+    // The teacher-facing "My Day" card + Copy button (browser view only).
+    showReportSummary(this.buildReportText(), this.buildClassCode());
     board.position.set(0, C.report.y, C.report.z); // float it in front of the player
     this.reportBoard = board;
     this.reportFadeElapsed = 0;

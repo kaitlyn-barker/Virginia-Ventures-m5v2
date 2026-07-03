@@ -25,6 +25,7 @@ import { TutorialSystem } from "./tutorial.js";
 import { buildWelcome } from "./stations.js";
 import { CONSTANTS } from "./config.js";
 import { updateFactoryHud, setFactoryHudStatus } from "./hud.js";
+import { hideReportSummary } from "./report-summary.js";
 
 export function resetGame(world: World): void {
   // 1. Each system tears down its runtime entities and re-seeds its own state.
@@ -53,6 +54,7 @@ export function resetGame(world: World): void {
   }));
   updateFactoryHud(seed);
   setFactoryHudStatus("Getting Ready", "ready");
+  hideReportSummary(); // clear the teacher "My Day" card if it was showing
 
   // 4. Re-show the business picker on the now-clear floor.
   buildWelcome(world);

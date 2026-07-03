@@ -1042,11 +1042,7 @@ export function buildReportBoard(
   margin: number, // final profit SHARE (0..1) — used to GRADE the Profit score
   profitCoins: number, // final Profit in coins — what the Profit row DISPLAYS
   factory: FactoryType | null, // the chosen business (fills in "{product}")
-  ordersFilled: number = 0, // buyer orders filled (a recap line, NOT a graded score)
-  ordersTotal: number = 0, // buyer orders posted in all
-  predictionsRight: number = 0, // predictions the game bore out (a recap line)
-  predictionsTotal: number = 0, // predictions made in all
-  safetyDecision: "guards" | "push" | null = null, // the worker-safety choice (a recap line)
+  recapLines: string[] = [], // plain recap lines (orders / predictions / safety / class code) — NOT graded
 ): Mesh {
   const C = CONSTANTS;
   const R = C.report;
@@ -1154,11 +1150,6 @@ export function buildReportBoard(
   // reserving a thin strip just above the summary for the recap lines (plain
   // "Orders filled: N of M" / "Predictions right: N of M" — recaps, NOT graded
   // scores, so the three-score rubric stays intact).
-  const recapLines: string[] = [];
-  if (ordersTotal > 0) recapLines.push(`📋 Orders filled: ${ordersFilled} of ${ordersTotal}`);
-  if (predictionsTotal > 0) recapLines.push(`🔮 Predictions right: ${predictionsRight} of ${predictionsTotal}`);
-  if (safetyDecision === "guards") recapLines.push("🛡️ Worker safety: added guards");
-  else if (safetyDecision === "push") recapLines.push("⏩ Worker safety: pushed on");
   const areaTop = cardY + titleH;
   const recapLineH = Math.round(cardH * 0.07);
   const recapStripH = recapLines.length * recapLineH;
@@ -1235,8 +1226,12 @@ export function buildReportBoard(
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = UI.navy;
-    ctx.font = `bold ${Math.round(recapLineH * 0.52)}px sans-serif`;
+    const baseSize = Math.round(recapLineH * 0.52);
+    const maxW = cardW * 0.92;
     recapLines.forEach((line, i) => {
+      // Shrink each line to fit the card width (the class code can be long).
+      const size = fitFontSize(ctx, line, maxW, baseSize, "bold");
+      ctx.font = `bold ${size}px sans-serif`;
       ctx.fillText(line, W / 2, blocksBottom + recapLineH * (i + 0.5));
     });
   }

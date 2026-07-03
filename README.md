@@ -62,7 +62,38 @@ Deploys to GitHub Pages automatically via `.github/workflows/deploy.yml` on push
      day ends.
 5. **End of Day report.** Three scored bands — Production, Worker Satisfaction,
    Profit — plus a short history wrap-up tying the day back to real Virginia
-   industry.
+   industry, a recap of orders/predictions/safety, and a **class code**.
+
+---
+
+## Class code (teacher output for the debrief)
+
+Every End of Day report shows a short **class code** encoding the run's key
+results, so a teacher can collect outcomes on paper or in an LMS with **zero
+backend**. In the browser view, a "Teacher Report" card (top-right) shows the
+code and a **Copy my report** button that puts the full plain-text recap on the
+clipboard.
+
+Format (dash-separated segments):
+
+```
+IRN-O194-S47-P164-W3-F2-G2-EXP-CBRK-KGRD
+```
+
+| Segment | Meaning |
+| --- | --- |
+| `TEX` / `IRN` / `LUM` | business: Textile / Ironworks / Lumber |
+| `O###` | Production Output |
+| `S##` | Worker Satisfaction (%) |
+| `P###` | Profit (coins) |
+| `W#` | workers hired |
+| `F#` | orders filled |
+| `G#` | predictions guessed right |
+| `EXP` | present only if the line was expanded |
+| `C___` | challenge faced: `CBRK` breakdown · `CDLY` delay · `CWLK` walkout · `CPRC` price war · `CNON` none |
+| `K___` | worker-safety choice: `KGRD` added guards · `KPSH` pushed on (omitted if the event never fired) |
+
+The code is defined in `ProductionSystem.buildClassCode()` (`src/production.ts`).
 
 ---
 
