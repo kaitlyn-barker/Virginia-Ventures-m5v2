@@ -170,6 +170,21 @@ export const CONSTANTS = {
   outputX: 4.4, // right end of the line: finished goods collect here
   lineCenterZ: ROOM_CENTER_Z + 3, // a few meters in front of the player, near room center
 
+  // --- Railroad shipping (VS.13: the railroad + the port at Norfolk) ---------
+  // A painted rail car sits against the wall just past the output crate. Each
+  // time a batch sells, a crate slides off the output toward the car — the goods
+  // leaving by rail for the port. No new lights: it is a textured box + wheels.
+  shipping: {
+    railCarX: 5.4, // rail car world x — just past the output (4.4), tucked against the +X wall (6)
+    railCarBodyColor: 0x7a3b2c, // boxcar red-brown
+    railCarWheelColor: 0x2b2b2b, // dark iron wheels
+    railColor: 0x4a4038, // the painted rail on the floor
+    crateSize: 0.5, // the little shipping crate that slides to the car
+    crateColor: 0x8a6a3a, // a filled crate (a touch lighter than the output crate)
+    seconds: 1.6, // how long the crate takes to slide to the car
+    rise: 0.55, // how high it arcs on the way (meters)
+  },
+
   // --- Foreman's control station (a desk + FOUR clickable control cards) ---
   deskWoodColor: 0x6e4a2b, // sturdy warm oak for the desk
   deskZ: -2.1, // how far in front of the player the desk sits (meters, toward -Z). Pulled back from -1.5 so the control cards aren't crammed at the bottom of the view — they sit comfortably in front without the player having to step back to use them.
@@ -1183,6 +1198,9 @@ export const CALLOUTS = {
   // The first time Worker Satisfaction drops low (the crew is being pushed hard).
   workerSafety:
     "Your workers are getting worn out. In real factories, pushing crews too hard led to unsafe conditions, and later to new rules that helped keep workers safe.",
+  // The first time a finished batch ships out to the rail car (VS.13).
+  railroad:
+    "The railroad carries our {product} to the port at Norfolk, where ships sell them far away.",
 };
 
 // =============================================================================

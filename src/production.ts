@@ -167,6 +167,8 @@ export class ProductionSystem extends createSystem({
   private taughtFirstHire = false; // has the "factories employed hundreds" note been shown?
   private taughtLowMaterials = false; // has the "steady supply of materials" note been shown?
   private taughtWorkerSafety = false; // has the worker-safety note been shown once?
+  private taughtRailroad = false; // has the "ships out by rail to Norfolk" note been shown?
+  private shipElapsed = -1; // >=0 while a sold crate slides to the rail car (-1 = idle)
 
   // --- Machine wear (pushing Fast piles it on; a breakdown grows likely) ---
   private machineWear = 0; // extra breakdown chance built up from the pace
@@ -368,6 +370,8 @@ export class ProductionSystem extends createSystem({
         const glow = product.userData.glow as Mesh | undefined;
         if (glow) (glow.material as MeshBasicMaterial).opacity = 0;
       }
+      const shipCrate = group.userData.shipCrate as Mesh | undefined;
+      if (shipCrate) shipCrate.visible = false; // tuck away a crate mid-ship
     }
 
     // Dispose EVERY runtime-built entity in one sweep (copy first — disposing
@@ -420,6 +424,8 @@ export class ProductionSystem extends createSystem({
     this.taughtFirstHire = false;
     this.taughtLowMaterials = false;
     this.taughtWorkerSafety = false;
+    this.taughtRailroad = false;
+    this.shipElapsed = -1;
     this.machineWear = 0;
     this.costBurden = 0;
     this.expandUnlocked = false;
@@ -547,6 +553,7 @@ export class ProductionSystem extends createSystem({
     if (this.running) this.advanceRun(delta);
     if (this.repairing) this.advanceRepair(delta);
     if (this.shipmentPending) this.advanceShipment(delta);
+    if (this.shipElapsed >= 0) this.advanceShip(delta);
     if (this.machineDown || this.repairing) this.animateSmoke(delta);
     this.advanceBoard(delta);
     this.advanceNote(delta);
@@ -665,6 +672,9 @@ export class ProductionSystem extends createSystem({
     this.materials = C.materials.max;
     this.tweenMaterials(before); // glide the meter back up to full
     this.addCost(C.materials.orderMarginCost); // the order costs you a little margin now
+    const factory = this.globals.activeFactory as FactoryType | null;
+    const material = factory ? factory.material : "materials";
+    this.setNote(`Fresh ${material} arrives by rail — the stock is full again.`);
   }
 
   // Expand the Line: the one-time upgrade. Only after the foreman has opened it up,
@@ -901,6 +911,7 @@ export class ProductionSystem extends createSystem({
     this.running = false;
     Sfx.stopHum(); // the line stops — fade the machine drone out
     Sfx.coin(); // a batch was made and sold — a bright "ka-ching"
+    this.startShip(); // send a crate sliding out to the rail car (the goods ship by rail)
 
     // Tuck the good away until the next run (and turn its glow back off).
     for (const line of this.queries.lines.entities) {
@@ -991,6 +1002,10 @@ export class ProductionSystem extends createSystem({
 
     // Reveal the farm-vs-factory note with this batch's number.
     this.showNote();
+
+    // Teaching moment (once, on the second run): name the railroad + Norfolk port
+    // the goods ship out to (runs AFTER showNote so it takes the note that run).
+    this.maybeTeachRailroad();
 
     // If a tired crew dragged this run's output down, say so honestly (right after
     // the farm note, so it takes the note this run). This is what makes pushing
@@ -1180,6 +1195,56 @@ export class ProductionSystem extends createSystem({
     if (this.materials > CONSTANTS.materials.lowThreshold) return;
     this.taughtLowMaterials = true;
     this.setNote(CALLOUTS.lowMaterials);
+  }
+
+  // Teaching moment (once): name the railroad + the port at Norfolk the goods ship
+  // out to (VS.13). Held to the SECOND run so the first run keeps the farm-vs-
+  // factory side-by-side (runsFinished is still pre-increment here).
+  private maybeTeachRailroad(): void {
+    if (!this.globals.tourDone) return;
+    if (this.taughtRailroad) return;
+    if (this.runsFinished < 1) return; // let run 1 show the farm contrast first
+    this.taughtRailroad = true;
+    const factory = this.globals.activeFactory as FactoryType | null;
+    this.setNote(fillNews(CALLOUTS.railroad, factory));
+  }
+
+  // --- Shipping the goods out by rail (VS.13) --------------------------------
+  // A batch just sold: send a filled crate sliding off the output crate to the
+  // rail car. Purely visual — the sale already happened.
+  private startShip(): void {
+    for (const line of this.queries.lines.entities) {
+      const crate = line.object3D?.userData.shipCrate as Mesh | undefined;
+      if (!crate) continue;
+      crate.visible = true;
+      crate.position.set(CONSTANTS.outputX, 0.35, 0);
+      (crate.material as MeshLambertMaterial).opacity = 1;
+    }
+    this.shipElapsed = 0;
+  }
+
+  // Glide the shipping crate from the output to the rail car in a little arc, fade
+  // it as it "loads," then tuck it away. Writes only into the crate's transform +
+  // material — no per-frame allocation.
+  private advanceShip(delta: number): void {
+    const S = CONSTANTS.shipping;
+    this.shipElapsed += delta;
+    const t = Math.min(1, this.shipElapsed / S.seconds);
+    const done = t >= 1;
+    for (const line of this.queries.lines.entities) {
+      const crate = line.object3D?.userData.shipCrate as Mesh | undefined;
+      if (!crate) continue;
+      if (done) {
+        crate.visible = false;
+        continue;
+      }
+      const x = CONSTANTS.outputX + (S.railCarX - CONSTANTS.outputX) * this.smooth(t);
+      crate.position.set(x, 0.35 + Math.sin(Math.PI * t) * S.rise, 0);
+      // Fade out over the last third as it settles onto the car.
+      (crate.material as MeshLambertMaterial).opacity =
+        t > 0.66 ? Math.max(0, 1 - (t - 0.66) / 0.34) : 1;
+    }
+    if (done) this.shipElapsed = -1;
   }
 
   // --- Worker-safety event ---------------------------------------------------

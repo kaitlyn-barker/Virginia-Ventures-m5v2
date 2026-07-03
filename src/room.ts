@@ -588,6 +588,43 @@ export function buildProductionLine(): Group {
   line.add(makeBox(0.08, 0.5, 1.0, C.crateColor, [ox - 0.56, 0.3, 0], woodMap)); // left side
   line.add(makeBox(0.08, 0.5, 1.0, C.crateColor, [ox + 0.56, 0.3, 0], woodMap)); // right side
 
+  // --- 4a. RAIL CAR (goods ship out by rail to the port at Norfolk — VS.13) ---
+  // A painted rail car tucked against the wall just past the output. Each sale, a
+  // crate slides off the output toward it (see 4c + the ProductionSystem). No new
+  // lights: a textured boxcar body + dark wheels + a painted rail on the floor.
+  const S = C.shipping;
+  const rcx = S.railCarX;
+  line.add(makeBox(0.5, 0.06, 2.2, S.railColor, [rcx, 0.03, 0])); // the rail on the floor (runs along Z)
+  line.add(makeBox(1.1, 0.5, 1.0, S.railCarBodyColor, [rcx, 0.55, 0], woodMap)); // boxcar body
+  line.add(makeBox(1.1, 0.45, 0.1, S.railCarBodyColor, [rcx, 0.78, -0.5], woodMap)); // back wall of the car
+  for (const dx of [-0.4, 0.4]) {
+    for (const dz of [-0.4, 0.4]) {
+      const wheel = new Mesh(
+        new CylinderGeometry(0.2, 0.2, 0.14, 16),
+        new MeshLambertMaterial({ color: S.railCarWheelColor }),
+      );
+      wheel.rotation.x = Math.PI / 2; // lay the cylinder so its round face points at the player
+      wheel.position.set(rcx + dx, 0.2, dz);
+      line.add(wheel);
+    }
+  }
+
+  // --- 4c. THE SHIPPING CRATE (one filled crate that slides to the rail car) --
+  // Hidden until a batch sells; the ProductionSystem then glides it from the
+  // output crate to the rail car in a little arc and fades it as it "loads."
+  const shipCrate = makeBox(
+    S.crateSize,
+    S.crateSize,
+    S.crateSize,
+    S.crateColor,
+    [C.outputX, 0.35, 0],
+    woodMap,
+  );
+  shipCrate.visible = false;
+  (shipCrate.material as MeshLambertMaterial).transparent = true; // so it can fade as it loads
+  line.add(shipCrate);
+  line.userData.shipCrate = shipCrate;
+
   // --- 4b. THE TRAVELING GOOD (one batch riding the line during a run) -------
   // Hidden until the line runs. The ProductionSystem glides it from the intake
   // to the output crate, flipping its color from raw material to the business
