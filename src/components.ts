@@ -47,6 +47,12 @@ export const ReadoutBoard = createComponent("ReadoutBoard", {});
 // one short line at a time, then fades them away.
 export const HintSign = createComponent("HintSign", {});
 
+// Marks the "Play Again" button that appears on the End of Day report. Clicking
+// it reloads the page for a clean, pristine start (so a student can try a
+// different business in the same class session). The ProductionSystem builds the
+// button when it shows the report and watches for the click.
+export const RestartButton = createComponent("RestartButton", {});
+
 // =============================================================================
 // Foreman components (used by the ForemanSystem below)
 //

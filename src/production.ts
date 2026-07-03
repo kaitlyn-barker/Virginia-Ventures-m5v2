@@ -25,12 +25,16 @@ import {
   Sfx,
 } from "./sfx.js";
 import {
+  UI,
+} from "./ui-style.js";
+import {
   ControlCard,
   FactoryMachine,
   Foreman,
   ForemanPrompt,
   HintSign,
   ReadoutBoard,
+  RestartButton,
 } from "./components.js";
 import {
   CALLOUTS,
@@ -55,6 +59,7 @@ import {
   buildReportBoard,
   expandCardText,
   hireCardText,
+  makeTextPlane,
   repairCardText,
   speedCardText,
 } from "./stations.js";
@@ -111,6 +116,7 @@ export class ProductionSystem extends createSystem({
   hints: { required: [HintSign] }, // the first-time hint banner above the desk
   foremen: { required: [Foreman] }, // the foreman (to tuck his speech panel away when the report appears)
   foremanPrompts: { required: [ForemanPrompt] }, // his "Next" news card (tucked away once the day is over)
+  restartPressed: { required: [RestartButton, Pressed] }, // the report's "Play Again" button was clicked
 }) {
   // --- Current settings + run state ---
   private speedIndex = CONSTANTS.defaultSpeedIndex; // 0=Slow, 1=Medium, 2=Fast
@@ -253,6 +259,15 @@ export class ProductionSystem extends createSystem({
     // React the instant a control card is clicked (InputSystem adds Pressed).
     this.queries.pressedCards.subscribe("qualify", (entity) => {
       this.onCardPressed(entity);
+    });
+
+    // "Play Again" on the End of Day report → reload the page for a clean start.
+    // All game state lives in memory, so a reload lands the student back on the
+    // business picker with everything reset — the simplest, most robust way to let
+    // them try a different factory in the same class session.
+    this.queries.restartPressed.subscribe("qualify", () => {
+      Sfx.clunk();
+      window.location.reload();
     });
   }
 
@@ -1254,6 +1269,27 @@ export class ProductionSystem extends createSystem({
     this.reportBoard = board;
     this.reportFadeElapsed = 0;
     this.world.createTransformEntity(board);
+
+    // A gold "Play Again" button just below the report. Clicking it reloads the
+    // page for a clean start, so a student can try a DIFFERENT business in the
+    // same class session (the reload lands back on the business picker). Same
+    // card style as the tour's "Start the tour" button.
+    const R = C.restart;
+    const againButton = makeTextPlane({
+      text: R.label,
+      icon: R.icon,
+      width: R.width,
+      height: R.height,
+      background: UI.gold,
+      textColor: UI.white,
+      border: UI.goldText,
+    });
+    againButton.position.set(0, R.y, R.z);
+    this.world
+      .createTransformEntity(againButton)
+      .addComponent(RayInteractable)
+      .addComponent(RestartButton);
+
     this.spawnConfetti(); // the day is done — make it feel like a win screen
 
     // Tuck the foreman's speech panel away so his closing line doesn't overlap the

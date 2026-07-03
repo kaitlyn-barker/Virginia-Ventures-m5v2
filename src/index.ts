@@ -206,4 +206,21 @@ World.create(document.getElementById("scene-container") as HTMLDivElement, {
 
     camera.rotation.set(pitch, yaw, 0);
   });
+
+  // ---------------------------------------------------------------------------
+  // TEACHER RESTART — press "R" to start the whole day over. This is an escape
+  // hatch for rescuing a stuck session (a factory the class wants to abandon, a
+  // student who got lost mid-tour). It asks for confirmation first so a stray
+  // keypress can't wipe a good run, and it only listens on the flat screen — a
+  // headset has no keyboard, and the report's own "Play Again" button covers the
+  // in-VR case. A reload returns to a clean business picker (all state is in
+  // memory), so the class can pick a different business right away.
+  // ---------------------------------------------------------------------------
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "r" && event.key !== "R") return;
+    if (world.visibilityState.value !== VisibilityState.NonImmersive) return; // browser only
+    if (window.confirm("Restart the factory day? This starts over from the business picker.")) {
+      window.location.reload();
+    }
+  });
 });

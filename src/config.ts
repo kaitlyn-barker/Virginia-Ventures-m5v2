@@ -480,6 +480,21 @@ export const CONSTANTS = {
     summaryTextColor: 0xf4ecd6, // cream summary text on the teal band
   },
 
+  // --- Play Again button (on the End of Day report) ---------------------------
+  // A gold button that floats just below the report board. Clicking it reloads the
+  // page for a clean start, so a student can run a DIFFERENT business in the same
+  // class session without a teacher having to refresh the tab. The position sits
+  // between the desk (z -2.1) and the report (z -3.8), low enough to read as "the
+  // day's next step" but still above the desk's sightline so it is never hidden.
+  restart: {
+    label: "Play Again", // button text (kept short + plain for 5th graders)
+    icon: "🔄", // a recycle/again glyph leading the label
+    width: 1.5, // button size left-to-right (meters)
+    height: 0.36, // button size up-and-down (meters)
+    y: 1.0, // how high it floats off the floor — just under the report, clear of the desk
+    z: -3.6, // how far in front of the player it hangs (meters, toward -Z)
+  },
+
   // --- Celebration: a burst of confetti when the day's report appears ---------
   // The end-of-day report is the game's "you did it!" screen — the confetti
   // makes it FEEL like one. One Points object (a single draw call), built when
