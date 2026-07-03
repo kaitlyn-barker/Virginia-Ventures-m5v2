@@ -496,6 +496,16 @@ export const CONSTANTS = {
     //   now takes a while to arrive (a shipment in transit) for the rest of the phase.
     shipmentLoss: 0.7, // chunk of a FULL stock lost the moment the delay hits (a sharp drop)
     orderDelaySeconds: 4.0, // how long a reordered shipment now takes to arrive
+
+    // — WORKER WALKOUT challenge — an already-unhappy crew walks off for a few
+    //   runs; ease the pace (satisfaction recovers) or hire fresh hands to cope.
+    walkoutSatisfaction: 0.5, // only strikes if Worker Satisfaction is below this when the rival opens
+    walkoutFraction: 0.5, // share of the crew that walks out (rounded up, at least 1)
+    walkoutRuns: 3, // how many runs they stay off the line
+
+    // — PRICE WAR challenge — the rival cuts prices AGAIN a few runs into the phase
+    //   (on top of the opening cut); cope by expanding + efficient Fast bursts.
+    pricewarDelayRuns: 3, // runs after the challenge strikes until the second price cut lands
   },
 
   // --- The foreman: a stationary figure beside the desk who delivers news ----
@@ -843,9 +853,13 @@ export function fillNews(template: string, factory: FactoryType | null): string 
 //     arrive, so the student slows the line and/or reorders early to cope.
 // =============================================================================
 export type Phase3Challenge = {
-  id: "breakdown" | "delay"; // which setback this is (the system branches on it)
+  id: "breakdown" | "delay" | "walkout" | "pricewar"; // which setback (the system branches on it)
   name: string; // short headline for the status note
   announce: string; // what the status note says when it strikes (and how to cope)
+  // Optional per-business weight multiplier (keyed by FACTORY_TYPES id). A higher
+  // number makes this setback likelier for that business, so each trade's Phase 3
+  // matches its personality. Missing = weight 1 (evenly likely).
+  bias?: Record<string, number>;
 };
 
 export const PHASE3_CHALLENGES: Phase3Challenge[] = [
@@ -854,12 +868,28 @@ export const PHASE3_CHALLENGES: Phase3Challenge[] = [
     name: "MACHINE BREAKDOWN",
     announce:
       "The {machine} stopped with a puff of smoke and an amber warning light. Click “Repair” to fix it — it takes a moment and costs a little.",
+    bias: { iron: 2 }, // the ironworks furnace breaks down more often
   },
   {
     id: "delay",
     name: "DELAYED SHIPMENT",
     announce:
       "Raw materials dropped sharply, and new orders now take longer to arrive. Slow the line or reorder early to cope.",
+    bias: { lumber: 2 }, // lumber travels by rail/ship, so it sees more delays
+  },
+  {
+    id: "walkout",
+    name: "WORKER WALKOUT",
+    announce:
+      "Your worn-out crew has walked off the line! Ease the pace to win them back, or hire fresh hands to keep making goods.",
+    // Only ever picked when the crew is ALREADY unhappy (see competition.walkoutSatisfaction)
+    // and there are workers to walk out — so it always feels earned, never random-unfair.
+  },
+  {
+    id: "pricewar",
+    name: "PRICE WAR",
+    announce:
+      "The rival keeps undercutting us — another price cut is coming. To keep your profit, work smarter: expand the line, and use short Fast bursts without wearing the machine out.",
   },
 ];
 

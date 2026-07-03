@@ -222,6 +222,11 @@ export class ProductionSystem extends createSystem({
   private shipmentSlow = false; // are reorders delayed for the rest of the phase?
   private shipmentPending = false; // is a delayed shipment on its way right now?
   private shipmentElapsed = 0; // seconds the current shipment has been in transit
+  // WORKER WALKOUT challenge:
+  private walkoutRuns = 0; // runs left with part of the crew off the line (0 = nobody out)
+  private walkoutWorkers = 0; // how many workers walked out
+  // PRICE WAR challenge:
+  private priceWarRuns = 0; // runs left until the rival's SECOND price cut lands (0 = none pending)
 
   // --- End of Day Production Report (the foreman's closing wrap-up) -----------
   private reportShown = false; // has the end-of-day report been built yet?
@@ -439,6 +444,9 @@ export class ProductionSystem extends createSystem({
     this.shipmentSlow = false;
     this.shipmentPending = false;
     this.shipmentElapsed = 0;
+    this.walkoutRuns = 0;
+    this.walkoutWorkers = 0;
+    this.priceWarRuns = 0;
     this.reportShown = false;
     this.reportBoard = null; // its entity is disposed by the Dynamic sweep
     this.reportFadeElapsed = 0;
@@ -740,9 +748,16 @@ export class ProductionSystem extends createSystem({
     // worker's hands count for less this run. We track the goods lost so the run's
     // toast can say so honestly — pushing Fast until the crew drags then FEELS
     // self-defeating, rather than only showing up as a low grade at the end.
-    const fullWorkerOutput = this.workers * C.workerOutputPerRun;
+    //
+    // During a WORKER WALKOUT, the walked-out hands aren't on the line, so only the
+    // remaining crew makes goods.
+    const activeWorkers = Math.max(
+      0,
+      this.workers - (this.walkoutRuns > 0 ? this.walkoutWorkers : 0),
+    );
+    const fullWorkerOutput = activeWorkers * C.workerOutputPerRun;
     const crewTired =
-      this.workers > 0 && this.satisfactionValue < C.tiredThreshold;
+      activeWorkers > 0 && this.satisfactionValue < C.tiredThreshold;
     const workerOutput = crewTired
       ? Math.round(fullWorkerOutput * C.tiredOutputScale)
       : fullWorkerOutput;
@@ -954,6 +969,23 @@ export class ProductionSystem extends createSystem({
         this.resolvePrediction("expand"); // it finally paid off — settle the "right away?" guess
       }
       this.repaintExpandCard();
+    }
+
+    // Phase-3 countdowns: a WORKER WALKOUT ends after its runs (the crew returns),
+    // and a PRICE WAR's second cut lands when its counter runs out.
+    if (this.walkoutRuns > 0) {
+      this.walkoutRuns -= 1;
+      if (this.walkoutRuns <= 0) {
+        this.walkoutWorkers = 0;
+        this.setNote("Your crew is back on the line. Keep the pace kind to them.");
+      }
+    }
+    if (this.priceWarRuns > 0) {
+      this.priceWarRuns -= 1;
+      if (this.priceWarRuns <= 0) {
+        this.dropPrice(); // the rival's second cut lands
+        this.setNote("The rival cut prices again! Work smarter to protect your profit.");
+      }
     }
 
     // Reveal the farm-vs-factory note with this batch's number.
@@ -1522,14 +1554,52 @@ export class ProductionSystem extends createSystem({
   private startCompetition(): void {
     this.competitionStarted = true;
     this.dropPrice();
-    // Roll the one random setback for this phase (like the farming module's
-    // random market event), then spring it.
-    this.challenge =
-      PHASE3_CHALLENGES[Math.floor(Math.random() * PHASE3_CHALLENGES.length)];
-    if (this.challenge.id === "breakdown") {
-      this.strikeBreakdown();
-    } else {
-      this.strikeDelayedShipment();
+
+    const factory = this.globals.activeFactory as FactoryType | null;
+    const fid = factory?.id ?? "";
+
+    // Which setbacks can strike right now. The WORKER WALKOUT only qualifies when
+    // the crew is ALREADY unhappy AND there are workers to walk out — so it always
+    // feels earned by the student's own pushing, never random-unfair. The rest are
+    // always in the running.
+    const eligible = PHASE3_CHALLENGES.filter((c) => {
+      if (c.id === "walkout") {
+        return (
+          this.workers > 0 &&
+          this.satisfactionValue < CONSTANTS.competition.walkoutSatisfaction
+        );
+      }
+      return true;
+    });
+
+    // Pick one, weighted by the business's personality (ironworks breaks down more,
+    // lumber sees more shipment delays — see each challenge's `bias`).
+    const weights = eligible.map((c) => c.bias?.[fid] ?? 1);
+    const total = weights.reduce((sum, w) => sum + w, 0);
+    let roll = Math.random() * total;
+    let picked = eligible[eligible.length - 1];
+    for (let i = 0; i < eligible.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) {
+        picked = eligible[i];
+        break;
+      }
+    }
+    this.challenge = picked;
+
+    switch (picked.id) {
+      case "breakdown":
+        this.strikeBreakdown();
+        break;
+      case "delay":
+        this.strikeDelayedShipment();
+        break;
+      case "walkout":
+        this.strikeWalkout();
+        break;
+      case "pricewar":
+        this.strikePriceWar();
+        break;
     }
   }
 
@@ -1574,6 +1644,28 @@ export class ProductionSystem extends createSystem({
     const lost = Math.round(C.materials.max * C.competition.shipmentLoss);
     this.materials = Math.max(0, this.materials - lost);
     this.tweenMaterials(before); // glide the meter sharply down
+    this.announceChallenge();
+  }
+
+  // WORKER WALKOUT: part of the already-unhappy crew walks off the line for a few
+  // runs, so fewer hands make goods. Cope by easing the pace (they come back) or
+  // hiring fresh workers. Only ever chosen when the crew is already low (see
+  // startCompetition), so it lands as a consequence, not a random punishment.
+  private strikeWalkout(): void {
+    const C = CONSTANTS;
+    this.walkoutWorkers = Math.max(
+      1,
+      Math.ceil(this.workers * C.competition.walkoutFraction),
+    );
+    this.walkoutRuns = C.competition.walkoutRuns;
+    this.announceChallenge();
+  }
+
+  // PRICE WAR: the rival will cut prices AGAIN a few runs from now (on top of the
+  // opening cut). We just start the countdown here + post the warning/tip; the
+  // second cut lands in finishRun when the counter runs out.
+  private strikePriceWar(): void {
+    this.priceWarRuns = CONSTANTS.competition.pricewarDelayRuns;
     this.announceChallenge();
   }
 
