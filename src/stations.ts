@@ -32,6 +32,8 @@ import {
   FactoryChoice,
   HintSign,
   OrderBoard,
+  PredictionButton,
+  PredictionPart,
   ReadoutBoard,
   TourButton,
   TourPart,
@@ -51,6 +53,7 @@ import {
 } from "./config.js";
 import type {
   FactoryType,
+  Prediction,
   ReportBand,
   ReportScore,
 } from "./config.js";
@@ -1039,6 +1042,8 @@ export function buildReportBoard(
   factory: FactoryType | null, // the chosen business (fills in "{product}")
   ordersFilled: number = 0, // buyer orders filled (a recap line, NOT a graded score)
   ordersTotal: number = 0, // buyer orders posted in all
+  predictionsRight: number = 0, // predictions the game bore out (a recap line)
+  predictionsTotal: number = 0, // predictions made in all
 ): Mesh {
   const C = CONSTANTS;
   const R = C.report;
@@ -1143,11 +1148,16 @@ export function buildReportBoard(
   ctx.fillText(title, W / 2, cardY + titleH / 2);
 
   // The three score blocks fill the space between the title and summary bands,
-  // reserving a thin strip just above the summary for the buyer-orders recap line
-  // (a plain "Orders filled: N of M" — a recap, not a graded score).
+  // reserving a thin strip just above the summary for the recap lines (plain
+  // "Orders filled: N of M" / "Predictions right: N of M" — recaps, NOT graded
+  // scores, so the three-score rubric stays intact).
+  const recapLines: string[] = [];
+  if (ordersTotal > 0) recapLines.push(`📋 Orders filled: ${ordersFilled} of ${ordersTotal}`);
+  if (predictionsTotal > 0) recapLines.push(`🔮 Predictions right: ${predictionsRight} of ${predictionsTotal}`);
   const areaTop = cardY + titleH;
-  const ordersStripH = ordersTotal > 0 ? Math.round(cardH * 0.08) : 0;
-  const blocksBottom = summaryTop - ordersStripH;
+  const recapLineH = Math.round(cardH * 0.07);
+  const recapStripH = recapLines.length * recapLineH;
+  const blocksBottom = summaryTop - recapStripH;
   const blockH = (blocksBottom - areaTop) / rows.length;
   const pad = cardX + Math.round(cardW * 0.05);
   const right = cardX + cardW - Math.round(cardW * 0.05);
@@ -1214,18 +1224,16 @@ export function buildReportBoard(
     }
   });
 
-  // Buyer-orders recap line in the reserved strip (navy, centered) — a plain
-  // count, deliberately NOT a graded score, so the three-score rubric is intact.
-  if (ordersTotal > 0) {
+  // Recap lines in the reserved strip (navy, centered) — plain counts, deliberately
+  // NOT graded scores, so the three-score rubric is intact.
+  if (recapLines.length > 0) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = UI.navy;
-    ctx.font = `bold ${Math.round(ordersStripH * 0.5)}px sans-serif`;
-    ctx.fillText(
-      `📋 Orders filled: ${ordersFilled} of ${ordersTotal}`,
-      W / 2,
-      blocksBottom + ordersStripH / 2,
-    );
+    ctx.font = `bold ${Math.round(recapLineH * 0.52)}px sans-serif`;
+    recapLines.forEach((line, i) => {
+      ctx.fillText(line, W / 2, blocksBottom + recapLineH * (i + 0.5));
+    });
   }
 
   // Dynamic summary line (white on the gold band), shrunk to fit.
@@ -1732,5 +1740,51 @@ export function buildGoalCard(world: World): void {
     .addComponent(TourButton, { action: TOUR.skip })
     .addComponent(TourPart)
     .addComponent(Dynamic);
+}
+
+// =============================================================================
+// buildPrediction
+// Floats a one-tap prediction prompt in front of the player: a cream question
+// card ("🗣️ If we run Fast, what happens to the crew?") with two gold answer
+// buttons beneath it. The panel is non-interactive; each button is its own
+// clickable entity carrying a PredictionButton value (0 or 1). Every piece is
+// tagged PredictionPart so the ProductionSystem can sweep the whole prompt away
+// the moment an answer is tapped. (Dynamic too, so "Play Again" clears it.)
+// =============================================================================
+export function buildPrediction(world: World, prediction: Prediction): void {
+  const P = CONSTANTS.predictions;
+
+  const panel = makeTextPlane({
+    text: prediction.question,
+    icon: "🗣️",
+    width: P.panelW,
+    height: P.panelH,
+    background: UI.cream,
+    textColor: UI.navy,
+    border: UI.gold,
+  });
+  panel.position.set(0, P.y, P.z);
+  world
+    .createTransformEntity(panel)
+    .addComponent(PredictionPart)
+    .addComponent(Dynamic);
+
+  prediction.options.forEach((label, i) => {
+    const button = makeTextPlane({
+      text: label,
+      width: P.buttonW,
+      height: P.buttonH,
+      background: UI.gold,
+      textColor: UI.white,
+      border: UI.goldText,
+    });
+    button.position.set(i === 0 ? -P.buttonGap : P.buttonGap, P.buttonY, P.z);
+    world
+      .createTransformEntity(button)
+      .addComponent(RayInteractable)
+      .addComponent(PredictionButton, { value: i })
+      .addComponent(PredictionPart)
+      .addComponent(Dynamic);
+  });
 }
 

@@ -36,6 +36,8 @@ import {
   ForemanPrompt,
   HintSign,
   OrderBoard,
+  PredictionButton,
+  PredictionPart,
   ReadoutBoard,
   RestartButton,
 } from "./components.js";
@@ -46,12 +48,14 @@ import {
   HINTS,
   ORDERS,
   PHASE3_CHALLENGES,
+  PREDICTIONS,
   fillNews,
 } from "./config.js";
 import type {
   FactoryType,
   Order,
   Phase3Challenge,
+  Prediction,
   SpeedSetting,
 } from "./config.js";
 import {
@@ -61,6 +65,7 @@ import {
   workerStationX,
 } from "./room.js";
 import {
+  buildPrediction,
   buildReportBoard,
   expandCardText,
   hireCardText,
@@ -125,6 +130,8 @@ export class ProductionSystem extends createSystem({
   foremanPrompts: { required: [ForemanPrompt] }, // his "Next" news card (tucked away once the day is over)
   restartPressed: { required: [RestartButton, Pressed] }, // the report's "Play Again" button was clicked
   orderBoards: { required: [OrderBoard] }, // the buyer-orders board beside the readout board
+  predictionPressed: { required: [PredictionButton, Pressed] }, // a prediction answer was tapped
+  predictionParts: { required: [PredictionPart] }, // every piece of the current prediction prompt
   dynamics: { required: [Dynamic] }, // every runtime-built entity — swept away on "Play Again"
 }) {
   // --- Current settings + run state ---
@@ -135,6 +142,7 @@ export class ProductionSystem extends createSystem({
   private runBeltSpeed = 0; // belt scroll speed locked in for this run
   private runWearAdd = 0; // machine wear this run adds when it finishes (from the pace)
   private itemsMade = 0; // how many goods this batch produced
+  private tiredLoss = 0; // goods LOST this run because the crew was tired (0 if not) — for the honest toast
   private transformed = false; // has the good passed the machine this run?
   private brokeDown = false; // did the machine break down on THIS run?
   private pendingMargin = 0; // the margin to show when this run finishes
@@ -237,6 +245,15 @@ export class ProductionSystem extends createSystem({
   private stealChecked = false; // has the competitor's one-time order grab run?
   private orderPopElapsed = -1; // >=0 while the little "stamp" pop plays (-1 = idle)
 
+  // --- Prediction prompts (one-tap "what will happen?" — see PREDICTIONS) -----
+  private predictionsPosed: Record<string, boolean> = {}; // which prompts have fired (once each)
+  private pendingPrediction: Prediction | null = null; // the prompt currently on screen (null = none)
+  private predictionAnswered: Record<string, number> = {}; // trigger -> the option tapped
+  private predictionAwaiting = new Set<string>(); // answered, waiting for the outcome to show the callout
+  private predictionsRight = 0; // guesses the game bore out (for the report)
+  private predictionsTotal = 0; // predictions resolved so far
+  private runStrained = false; // was the run just finished a Fast (crew-straining) one? (for the "fast" outcome)
+
   // --- Gentle guidance: the breathing pulse + tidy "only active controls" -----
   private pulseClock = 0; // animation clock for the breathing pulse
   private controlsLaidOut = false; // have we done the first show/hide + even layout of the cards?
@@ -292,6 +309,11 @@ export class ProductionSystem extends createSystem({
     // Grab the order board the moment it appears (placed with the cockpit).
     this.queries.orderBoards.subscribe("qualify", (entity) => {
       this.orderBoard = (entity.object3D as Mesh) ?? null;
+    });
+
+    // A prediction answer was tapped → record the guess and clear the prompt.
+    this.queries.predictionPressed.subscribe("qualify", (entity) => {
+      this.onPredictionAnswer(entity.getValue(PredictionButton, "value") ?? 0);
     });
   }
 
@@ -363,6 +385,7 @@ export class ProductionSystem extends createSystem({
     this.runBeltSpeed = 0;
     this.runWearAdd = 0;
     this.itemsMade = 0;
+    this.tiredLoss = 0;
     this.transformed = false;
     this.brokeDown = false;
     this.pendingMargin = 0;
@@ -412,6 +435,13 @@ export class ProductionSystem extends createSystem({
     this.ordersFilled = 0;
     this.stealChecked = false;
     this.orderPopElapsed = -1;
+    this.predictionsPosed = {};
+    this.pendingPrediction = null; // any on-screen prompt is disposed by the Dynamic sweep
+    this.predictionAnswered = {};
+    this.predictionAwaiting = new Set();
+    this.predictionsRight = 0;
+    this.predictionsTotal = 0;
+    this.runStrained = false;
     this.pulseClock = 0;
     this.controlsLaidOut = false;
     this.startHinted = false;
@@ -529,6 +559,10 @@ export class ProductionSystem extends createSystem({
       | ((text: string) => void)
       | undefined;
     setText?.(speedCardText(CONSTANTS.speeds[this.speedIndex].label));
+
+    // The first time the student sets the machine to Fast, ask them to predict
+    // what it does to the crew (before they run it — a hypothesis before evidence).
+    if (CONSTANTS.speeds[this.speedIndex].strainsCrew) this.maybePosePrediction("fast");
   }
 
   // Add one worker to the line (up to the cap): drop a figure at the next open
@@ -568,6 +602,10 @@ export class ProductionSystem extends createSystem({
       this.taughtFirstHire = true;
       this.setNote(CALLOUTS.firstHire);
     }
+
+    // On their first hire of the real game, ask them to predict whether the extra
+    // worker will make more next run (the answer shows on the next run's output).
+    this.maybePosePrediction("hire");
   }
 
   // Order materials: top the Raw Materials stock back up to full, and charge for
@@ -610,6 +648,10 @@ export class ProductionSystem extends createSystem({
     this.expandRunsLeft = C.expand.runsToPayoff;
     this.addCost(C.expand.marginCost); // pay the investment now (margin dips)
     this.repaintExpandCard();
+
+    // Ask them to predict whether expanding pays off right away (it does not — it
+    // costs now and pays over the next few runs; the callout lands when it does).
+    this.maybePosePrediction("expand");
   }
 
   // --- Running the line ------------------------------------------------------
@@ -639,6 +681,7 @@ export class ProductionSystem extends createSystem({
     // Track how long we've been pushing the hardest pace (it resets the moment we
     // ease off) — it feeds both crew strain and (through wear) breakdowns.
     this.fastStreak = speed.strainsCrew ? this.fastStreak + 1 : 0;
+    this.runStrained = speed.strainsCrew; // remember for the "Fast tires the crew" prediction outcome
 
     // Decide up front whether the machine breaks down this run. The chance is the
     // business's own risk PLUS the wear we've built up running fast — so a
@@ -661,9 +704,21 @@ export class ProductionSystem extends createSystem({
     // A normal run. Work out the batch — the machine's output, plus every worker's
     // hands, plus the expansion bonus once it's finished — but capped by the
     // materials on hand (you can't make more cloth than you have cotton).
+    //
+    // A TIRED crew (Worker Satisfaction below the threshold) works slower, so each
+    // worker's hands count for less this run. We track the goods lost so the run's
+    // toast can say so honestly — pushing Fast until the crew drags then FEELS
+    // self-defeating, rather than only showing up as a low grade at the end.
+    const fullWorkerOutput = this.workers * C.workerOutputPerRun;
+    const crewTired =
+      this.workers > 0 && this.satisfactionValue < C.tiredThreshold;
+    const workerOutput = crewTired
+      ? Math.round(fullWorkerOutput * C.tiredOutputScale)
+      : fullWorkerOutput;
+    this.tiredLoss = fullWorkerOutput - workerOutput;
     const wanted =
       Math.round(factory.throughput * speed.multiplier) +
-      this.workers * C.workerOutputPerRun +
+      workerOutput +
       (this.expandState === "done" ? C.expand.outputBonus : 0);
     this.itemsMade = Math.min(wanted, this.materials);
     this.pendingMaterials = this.materials - this.itemsMade;
@@ -863,12 +918,22 @@ export class ProductionSystem extends createSystem({
         this.expandState = "done";
         this.addExpansionAnnex();
         this.updateControlVisibility(); // the one-time Expand control is spent — tuck it away
+        this.resolvePrediction("expand"); // it finally paid off — settle the "right away?" guess
       }
       this.repaintExpandCard();
     }
 
     // Reveal the farm-vs-factory note with this batch's number.
     this.showNote();
+
+    // If a tired crew dragged this run's output down, say so honestly (right after
+    // the farm note, so it takes the note this run). This is what makes pushing
+    // Fast until the crew is worn out FEEL self-defeating.
+    if (this.tiredLoss > 0) {
+      this.setNote(
+        `The tired crew made ${this.tiredLoss} fewer this run. Ease off to let them recover.`,
+      );
+    }
 
     // Teaching moment (once): if this run drained the stock low, explain why a
     // steady supply mattered. Runs AFTER showNote so it takes the note that run.
@@ -888,6 +953,13 @@ export class ProductionSystem extends createSystem({
     // or ran out of time. (A broken run makes no goods, so it never calls this —
     // a breakdown doesn't burn an order's deadline.)
     this.advanceOrders(this.itemsMade);
+
+    // Settle any prediction whose evidence just arrived (kept last so the callout
+    // wins the status note on the run it resolves): a Fast run shows the crew got
+    // tired; the run after a hire shows the extra worker's output. (Expand settles
+    // above, the run its payoff lands.)
+    if (this.runStrained) this.resolvePrediction("fast");
+    this.resolvePrediction("hire");
   }
 
   // A broken run: no goods, a repair cost, a frustrated crew — but fixing it
@@ -1203,6 +1275,48 @@ export class ProductionSystem extends createSystem({
     // A gentle up-and-back bump (0 → +8% → 0) over the pop's duration.
     const t = this.orderPopElapsed / dur;
     this.orderBoard.scale.setScalar(1 + 0.08 * Math.sin(Math.PI * t));
+  }
+
+  // --- Prediction prompts ----------------------------------------------------
+  // Pose the prompt for `trigger`, once, at its decision point — but only after
+  // the tour (so it never fights the tutorial), and never two at once.
+  private maybePosePrediction(trigger: string): void {
+    if (!this.globals.tourDone) return;
+    if (this.predictionsPosed[trigger] || this.pendingPrediction) return;
+    const pred = PREDICTIONS.find((p) => p.trigger === trigger);
+    if (!pred) return;
+    this.predictionsPosed[trigger] = true;
+    this.pendingPrediction = pred;
+    buildPrediction(this.world, pred);
+    Sfx.bell(); // the foreman speaks up to ask
+  }
+
+  // An answer was tapped: record the guess, sweep the prompt away, and start
+  // waiting for the outcome (the callout + tally land when the evidence arrives).
+  private onPredictionAnswer(value: number): void {
+    const pred = this.pendingPrediction;
+    if (!pred) return;
+    Sfx.clunk();
+    this.predictionAnswered[pred.trigger] = value;
+    this.predictionAwaiting.add(pred.trigger);
+    this.pendingPrediction = null;
+    for (const part of [...this.queries.predictionParts.entities]) {
+      if (part.hasComponent(RayInteractable)) part.removeComponent(RayInteractable);
+      part.dispose();
+    }
+  }
+
+  // The evidence for a prediction just arrived: compare the guess to what the game
+  // bore out, tally it for the report, and post the confirming/upending callout.
+  private resolvePrediction(trigger: string): void {
+    if (!this.predictionAwaiting.has(trigger)) return;
+    this.predictionAwaiting.delete(trigger);
+    const pred = PREDICTIONS.find((p) => p.trigger === trigger);
+    if (!pred) return;
+    const right = this.predictionAnswered[trigger] === pred.correct;
+    this.predictionsTotal += 1;
+    if (right) this.predictionsRight += 1;
+    this.setNote(right ? pred.rightCallout : pred.wrongCallout);
   }
 
   // Glide the Costs + Profit meters from one (revenue, margin) breakdown to the
@@ -1560,6 +1674,8 @@ export class ProductionSystem extends createSystem({
       factory,
       this.ordersFilled, // how many buyer orders were filled (recap, not graded)
       this.activeOrders.length, // how many were posted in all
+      this.predictionsRight, // how many predictions the game bore out
+      this.predictionsTotal, // how many predictions were made
     );
     board.position.set(0, C.report.y, C.report.z); // float it in front of the player
     this.reportBoard = board;

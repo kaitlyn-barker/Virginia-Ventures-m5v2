@@ -242,6 +242,21 @@ export const CONSTANTS = {
     lostColor: 0xb3402e, // red — the rival took it
   },
 
+  // --- Prediction prompts (one-tap "what will happen?" — see PREDICTIONS) ------
+  // A question panel floats in front of the player (between the desk and the
+  // board) with two tappable answer buttons beneath it. It appears at a decision
+  // point, waits for one tap, then clears; the outcome + tally come later.
+  predictions: {
+    panelW: 3.2, // question panel size left-to-right (meters)
+    panelH: 0.72, // question panel size up-and-down (meters)
+    y: 2.0, // how high the question floats off the floor
+    z: -2.85, // how far in front of the player (between the desk at -2.1 and the board)
+    buttonW: 1.35, // answer button width (meters)
+    buttonH: 0.42, // answer button height (meters)
+    buttonY: 1.5, // answer buttons float just below the question
+    buttonGap: 0.78, // each button sits this far left/right of center (meters)
+  },
+
   // --- Name-tags on the production line (intake / machine / output) ---
   // Small teal tags, in the same crisp style as the control cards. They start
   // with generic words ("Material" / "Machine" / "Product") and get filled in
@@ -331,6 +346,12 @@ export const CONSTANTS = {
   workerOutputPerRun: 6, // extra goods each worker adds to a run (more hands, more made)
   workerWageMargin: 0.02, // how much each worker's wages trim the Profit Margin (a little each)
   workerKeepUp: 6, // goods of machine pace one worker can comfortably keep up with
+  // A TIRED crew works slower: once Worker Satisfaction drops below this, each
+  // worker's hands count for less that run (a discoverable consequence, so pushing
+  // Fast run-after-run FEELS self-defeating instead of just being graded down at
+  // the end). Kept gentle — the point is to notice it, not to be punished.
+  tiredThreshold: 0.4, // below this satisfaction (0..1), the crew is "tired"
+  tiredOutputScale: 0.6, // a tired crew's worker output is scaled by this (6 -> ~4 each)
 
   // Where the workers stand: a single neat row just in front of the conveyor,
   // evenly spaced left-to-right and filled as you hire. These are line-local
@@ -858,6 +879,59 @@ export const ORDERS: Order[] = [
     deadlineRuns: 4,
     bonus: 45,
     phase: "growth",
+  },
+];
+
+// =============================================================================
+// PREDICTIONS — one-tap "what do you think will happen?" prompts (the cheapest
+// constructivist mechanic: force a hypothesis BEFORE the evidence arrives).
+//
+// Each fires ONCE, at a decision point, and the foreman poses a two-choice
+// question. After the action plays out, a one-line callout confirms or upends the
+// guess, and the end-of-day report tallies "Predictions right: N of M". They are
+// never gated — answering is optional and progress never waits on it.
+//
+// `trigger` is the moment it appears:
+//   "fast"   — the first time the student sets the machine to Fast
+//   "hire"   — their first hire after the tour
+//   "expand" — the moment they choose to expand the line
+// `correct` is which option (0 or 1) the game will bear out. The outcomes are
+// deterministic — Fast always tires the crew, a worker always adds output,
+// expanding always costs now and pays later — so the "right" answer is fixed here.
+// =============================================================================
+export type Prediction = {
+  trigger: "fast" | "hire" | "expand";
+  question: string; // what the foreman asks
+  options: [string, string]; // the two one-tap answers
+  correct: 0 | 1; // which one the game bears out
+  rightCallout: string; // shown if they guessed it
+  wrongCallout: string; // shown if the result surprised them
+};
+
+export const PREDICTIONS: Prediction[] = [
+  {
+    trigger: "fast",
+    question: "If we run the machine Fast, what happens to the crew?",
+    options: ["🙂 Happier", "😟 More tired"],
+    correct: 1,
+    rightCallout: "You guessed it — running Fast wore the crew out.",
+    wrongCallout: "Surprise — running Fast wore the crew out.",
+  },
+  {
+    trigger: "hire",
+    question: "Will one more worker make MORE goods next run?",
+    options: ["📈 Yes, more", "➡️ About the same"],
+    correct: 0,
+    rightCallout: "You guessed it — more hands made more goods.",
+    wrongCallout: "Surprise — more hands made more goods.",
+  },
+  {
+    trigger: "expand",
+    question: "Will expanding the line pay off right away?",
+    options: ["✅ Right away", "⏳ Not yet"],
+    correct: 1,
+    rightCallout: "You guessed it — expanding costs now and pays off later.",
+    wrongCallout: "Surprise — expanding costs now and pays off later.",
   },
 ];
 

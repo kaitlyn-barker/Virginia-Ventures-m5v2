@@ -56,6 +56,17 @@ export const ReadoutBoard = createComponent("ReadoutBoard", {});
 // stamp them FILLED or LOST.
 export const OrderBoard = createComponent("OrderBoard", {});
 
+// The two answer buttons on a one-tap prediction prompt. `value` is which option
+// was tapped (0 or 1). The ProductionSystem watches for a clicked PredictionButton
+// to record the guess.
+export const PredictionButton = createComponent("PredictionButton", {
+  value: { type: Types.Int8, default: 0 },
+});
+// Tags every piece of the CURRENT prediction prompt (its question panel + the two
+// buttons), so the whole thing can be swept away in one go once an answer is
+// tapped.
+export const PredictionPart = createComponent("PredictionPart", {});
+
 // Marks the small "what to do next" hint banner above the desk. The
 // ProductionSystem finds it through this tag and shows the first-time hints on it,
 // one short line at a time, then fades them away.
