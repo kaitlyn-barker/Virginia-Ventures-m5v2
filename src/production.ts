@@ -79,6 +79,7 @@ import {
 import type { OrderRow } from "./stations.js";
 import { resetGame } from "./reset.js";
 import { showReportSummary } from "./report-summary.js";
+import { showCoinToast } from "./hud.js";
 
 // =============================================================================
 // ScoreTween — one in-flight number-and-bar animation on the readout board.
@@ -194,6 +195,13 @@ export class ProductionSystem extends createSystem({
   private costsIndex = 0; // which board row is Costs (coins paid out)
   private profitIndex = 0; // which board row is Profit (coins kept)
 
+  // --- Coins: the visible, honest money balance (Phase 3.1) ------------------
+  private coins = 0; // the running money balance
+  private coinsIndex = 0; // which board row is Coins
+  private lastRunProfit = 0; // this run's profit in real coins (revenue − real costs)
+  private lastRunCosts = 0; // this run's costs in real coins (materials used + wages)
+  private loanTaken = false; // has the one-time zero-balance loan been given?
+
   // --- Belt scroll bounds (mirror buildProductionLine's slat layout) ---
   private beltLeft = 0;
   private beltRight = 0;
@@ -307,6 +315,7 @@ export class ProductionSystem extends createSystem({
     this.costsIndex = C.readouts.findIndex((r) => r.label === "Costs");
     this.profitIndex = C.readouts.findIndex((r) => r.label === "Profit");
     this.priceIndex = C.readouts.findIndex((r) => r.label === "Price");
+    this.coinsIndex = C.readouts.findIndex((r) => r.label === "Coins");
     // Seed every per-game mutable field (Production Output / Satisfaction from the
     // board seeds, the profit-share + reference sale, starting materials, and all
     // the run/phase/order flags). resetState() is the SINGLE source of truth for a
@@ -435,8 +444,12 @@ export class ProductionSystem extends createSystem({
     this.outputValue = parseFloat(C.readouts[this.outputIndex].value); // "120" -> 120
     this.satisfactionValue =
       parseFloat(C.readouts[this.satisfactionIndex].value) / 100; // "68%" -> 0.68
-    this.marginValue = C.profitDisplay.seedMargin; // 0.22
+    this.marginValue = C.profitDisplay.seedMargin; // 0.22 (grades the report)
     this.lastRevenue = C.profitDisplay.seedRevenue; // 100 coins
+    this.coins = C.coins.start; // the starting money purse
+    this.lastRunProfit = 0;
+    this.lastRunCosts = 0;
+    this.loanTaken = false;
     this.noteShown = false;
     this.noteFadeElapsed = 0;
     this.tweens = [];
@@ -671,7 +684,8 @@ export class ProductionSystem extends createSystem({
     const before = this.materials;
     this.materials = C.materials.max;
     this.tweenMaterials(before); // glide the meter back up to full
-    this.addCost(C.materials.orderMarginCost); // the order costs you a little margin now
+    this.addCost(C.materials.orderMarginCost); // margin dip (grades the report)
+    this.spendCoins(C.coins.orderCost); // and the real coin cost of the reorder
     const factory = this.globals.activeFactory as FactoryType | null;
     const material = factory ? factory.material : "materials";
     this.setNote(`Fresh ${material} arrives by rail — the stock is full again.`);
@@ -687,7 +701,8 @@ export class ProductionSystem extends createSystem({
     if (this.expandState !== "none") return; // one time only
     this.expandState = "building";
     this.expandRunsLeft = C.expand.runsToPayoff;
-    this.addCost(C.expand.marginCost); // pay the investment now (margin dips)
+    this.addCost(C.expand.marginCost); // margin dip (grades the report)
+    this.spendCoins(C.coins.expandCost); // and the real coin cost of the expansion
     this.repaintExpandCard();
 
     // Ask them to predict whether expanding pays off right away (it does not — it
@@ -953,14 +968,30 @@ export class ProductionSystem extends createSystem({
     );
     this.satisfactionValue = this.pendingSatisfaction;
 
-    // Profit + Costs: the COIN breakdown of THIS run's sale. Revenue = items made ×
-    // price; the margin is the profit share, so profit = revenue × margin and the
-    // rest is cost. Glide both meters from the old breakdown to the new one.
-    const fromRevenue = this.lastRevenue;
-    const fromMargin = this.marginValue;
-    this.lastRevenue = this.itemsMade * this.priceValue;
+    // Money: the REAL coin breakdown of THIS run's sale. Revenue = items × price;
+    // costs = the materials this run used (× material cost) + the crew's wages; the
+    // profit is what's left, and it lands in the running Coins balance. (marginValue
+    // is still kept, above/below, purely to GRADE the report — see the plan.)
     this.marginValue = this.pendingMargin;
-    this.tweenCostProfit(fromRevenue, fromMargin);
+    const runFactory = this.globals.activeFactory as FactoryType | null;
+    const revenue = this.itemsMade * this.priceValue;
+    this.lastRevenue = revenue;
+    const materialsCost = runFactory ? this.itemsMade * runFactory.materialCost : 0;
+    const wages = this.workers * C.coins.wagePerRun;
+    const fromCosts = this.lastRunCosts;
+    const fromProfit = this.lastRunProfit;
+    this.lastRunCosts = materialsCost + wages;
+    this.lastRunProfit = revenue - this.lastRunCosts;
+    const fromCoins = this.coins;
+    this.coins += this.lastRunProfit;
+    // Glide the three money meters to their new real-coin values (Coins is the
+    // running balance; Costs / Profit are this run's breakdown).
+    const fill = (v: number): number => Math.max(0, Math.min(1, v / C.coins.max));
+    this.startTween(this.costsIndex, fromCosts, this.lastRunCosts, fill(fromCosts), fill(this.lastRunCosts), (n) => `$${Math.round(n)}`);
+    this.startTween(this.profitIndex, fromProfit, this.lastRunProfit, fill(fromProfit), fill(this.lastRunProfit), (n) => `$${Math.round(n)}`);
+    this.refreshCoinsMeter(fromCoins);
+    if (this.lastRunProfit !== 0) showCoinToast(this.lastRunProfit); // +N / −N near the board
+    this.maybeLoan(); // a rough run can drop the balance to zero — offer the one-time loan
 
     // The pace wears the machine (Slow's negative wearAdd lets it recover), and any
     // one-time cost heals back out of the margin a little.
@@ -1279,7 +1310,8 @@ export class ProductionSystem extends createSystem({
       // Add safety guards: pay now, the relieved crew lifts, and the machine wears
       // slower from here on (a small PERMANENT relief).
       this.safetyDecision = "guards";
-      this.addCost(S.guardsCostMargin);
+      this.addCost(S.guardsCostMargin); // margin dip (grades the report)
+      this.spendCoins(CONSTANTS.coins.guardsCost); // and the real coin cost of the guards
       this.safetyWearRelief = S.guardsWearRelief;
       this.liftSatisfaction(S.guardsSatisfactionLift);
       this.setNote(S.guardsResult);
@@ -1315,25 +1347,59 @@ export class ProductionSystem extends createSystem({
     );
   }
 
-  // Charge a one-time cost: add it to the burden that lowers the profit share, then
-  // re-glide the Costs/Profit split right away (same sale, thinner margin → more of
-  // it is cost, less is profit). The burden heals back out over later runs.
+  // Charge a one-time cost to the PROFIT-SHARE burden that lowers the report grade
+  // (the burden heals back out over later runs). This no longer touches the Costs/
+  // Profit meters — those now show the run's real coin breakdown — so the coin
+  // deduction rides alongside via spendCoins().
   private addCost(amount: number): void {
     const factory = this.globals.activeFactory as FactoryType | null;
     if (!factory) return;
     this.costBurden += amount;
-    const fromMargin = this.marginValue;
     this.marginValue = this.marginFor(factory, CONSTANTS.speeds[this.speedIndex]);
-    this.tweenCostProfit(this.lastRevenue, fromMargin); // same revenue, dipped margin → costs up, profit down
   }
 
-  // --- Costs / Profit meters (the coin breakdown of a sale) ------------------
-  // Split a sale into the coins kept (profit) and the coins paid out (cost). They
-  // always add up to the (rounded) revenue, so each bar can show that part's share.
-  private profitCostsFor(revenue: number, margin: number): { profit: number; costs: number } {
-    const rev = Math.round(revenue);
-    const profit = Math.round(revenue * margin);
-    return { profit, costs: Math.max(0, rev - profit) };
+  // --- Coins: the honest money balance ---------------------------------------
+  // Glide the Coins meter to the current balance (with the gold-flash bump).
+  private refreshCoinsMeter(from: number): void {
+    const max = CONSTANTS.coins.max;
+    const clamp = (v: number): number => Math.max(0, Math.min(1, v / max));
+    this.startTween(
+      this.coinsIndex,
+      from,
+      this.coins,
+      clamp(from),
+      clamp(this.coins),
+      (n) => `$${Math.round(n)}`,
+    );
+  }
+
+  // Spend coins on a one-time action (reorder / repair / expand / safety guards):
+  // deduct, show a −N toast, glide the meter, and offer the loan if we hit zero.
+  private spendCoins(amount: number): void {
+    const from = this.coins;
+    this.coins -= amount;
+    showCoinToast(-amount);
+    this.refreshCoinsMeter(from);
+    this.maybeLoan();
+  }
+
+  // Earn coins (a filled order's bonus): add, show a +N toast, glide the meter.
+  private earnCoins(amount: number): void {
+    const from = this.coins;
+    this.coins += amount;
+    showCoinToast(amount);
+    this.refreshCoinsMeter(from);
+  }
+
+  // If the balance runs dry, hand over ONE small loan so the day never dead-ends.
+  private maybeLoan(): void {
+    if (this.loanTaken || this.coins > 0) return;
+    this.loanTaken = true;
+    const from = this.coins;
+    this.coins += CONSTANTS.coins.loanAmount;
+    showCoinToast(CONSTANTS.coins.loanAmount);
+    this.refreshCoinsMeter(from);
+    this.setNote(CONSTANTS.coins.loanText);
   }
 
   // --- Buyer orders ----------------------------------------------------------
@@ -1385,7 +1451,7 @@ export class ProductionSystem extends createSystem({
       if (o.progress >= o.cfg.quantity) {
         o.status = "filled";
         this.ordersFilled += 1;
-        this.grantOrderBonus();
+        this.earnCoins(o.cfg.bonus); // the bonus is real money now (Phase 3.1)
         Sfx.coin();
         this.setNote(`Order filled! ${o.cfg.buyer} paid a $${o.cfg.bonus} bonus.`);
         resolved = true;
@@ -1404,17 +1470,6 @@ export class ProductionSystem extends createSystem({
     if (resolved) this.popOrderBoard();
   }
 
-  // A filled order rewards the factory. Until Phase 3.1 gives coins a real home,
-  // the bonus eases the profit-cost burden so the Profit meter bumps up (the
-  // report's "Orders filled" line is the durable reward).
-  private grantOrderBonus(): void {
-    const factory = this.globals.activeFactory as FactoryType | null;
-    if (!factory) return;
-    this.costBurden = Math.max(0, this.costBurden - CONSTANTS.orders.fillBonusMargin);
-    const fromMargin = this.marginValue;
-    this.marginValue = this.marginFor(factory, CONSTANTS.speeds[this.speedIndex]);
-    this.tweenCostProfit(this.lastRevenue, fromMargin);
-  }
 
   // When the competitor opens, it grabs any still-open order we are too far behind
   // on — a survivable but real loss that makes Phase 3 land.
@@ -1495,30 +1550,6 @@ export class ProductionSystem extends createSystem({
     this.predictionsTotal += 1;
     if (right) this.predictionsRight += 1;
     this.setNote(right ? pred.rightCallout : pred.wrongCallout);
-  }
-
-  // Glide the Costs + Profit meters from one (revenue, margin) breakdown to the
-  // current one (this.lastRevenue / this.marginValue): the number tweens in coins,
-  // the bar tweens to that part's share of the sale (profit = margin, cost = 1−margin).
-  private tweenCostProfit(fromRevenue: number, fromMargin: number): void {
-    const from = this.profitCostsFor(fromRevenue, fromMargin);
-    const to = this.profitCostsFor(this.lastRevenue, this.marginValue);
-    this.startTween(
-      this.profitIndex,
-      from.profit,
-      to.profit,
-      fromMargin,
-      this.marginValue,
-      (n) => `$${Math.round(n)}`,
-    );
-    this.startTween(
-      this.costsIndex,
-      from.costs,
-      to.costs,
-      1 - fromMargin,
-      1 - this.marginValue,
-      (n) => `$${Math.round(n)}`,
-    );
   }
 
   // The line is out of materials: flash the (empty) Raw Materials meter gold and
@@ -1774,7 +1805,8 @@ export class ProductionSystem extends createSystem({
     this.machineDown = false;
     this.removeSmokePuff();
     this.setGauge(C.windowColor, 0.9); // back to the normal warm lamp glow
-    this.addCost(C.competition.repairMarginCost);
+    this.addCost(C.competition.repairMarginCost); // margin dip (grades the report)
+    this.spendCoins(C.coins.repairCost); // and the real coin cost of the repair
     this.repaintRepairCard();
     this.updateControlVisibility(); // the machine is OK again — tuck the Repair control away
     const factory = this.globals.activeFactory as FactoryType | null;
@@ -1807,7 +1839,8 @@ export class ProductionSystem extends createSystem({
     const before = this.materials;
     this.materials = C.materials.max;
     this.tweenMaterials(before);
-    this.addCost(C.materials.orderMarginCost);
+    this.addCost(C.materials.orderMarginCost); // margin dip (grades the report)
+    this.spendCoins(C.coins.orderCost); // and the real coin cost of the (delayed) reorder
     const factory = this.globals.activeFactory as FactoryType | null;
     const material = factory ? factory.material : "materials";
     this.setNote(`The ${material} shipment arrived — the line is restocked!`);
@@ -1926,7 +1959,7 @@ export class ProductionSystem extends createSystem({
       biz,
       output: Math.round(this.outputValue),
       sat: Math.round(this.satisfactionValue * 100),
-      profit: this.profitCostsFor(this.lastRevenue, this.marginValue).profit,
+      profit: Math.round(this.coins), // the final Coins balance (the money outcome)
       workers: this.workers,
       runs: this.runsFinished,
       ordersFilled: this.ordersFilled,
@@ -1975,7 +2008,7 @@ export class ProductionSystem extends createSystem({
       `Production runs: ${s.runs}`,
       `Production Output: ${s.output}`,
       `Worker Satisfaction: ${s.sat}%`,
-      `Profit: $${s.profit}`,
+      `Coins (money): $${s.profit}`,
       `Workers hired: ${s.workers}`,
       `Orders filled: ${s.ordersFilled} of ${s.ordersTotal}`,
       `Predictions right: ${s.predRight} of ${s.predTotal}`,
@@ -2014,8 +2047,8 @@ export class ProductionSystem extends createSystem({
     const board = buildReportBoard(
       this.outputValue, // final Production Output (the live running total)
       this.satisfactionValue, // final Worker Satisfaction (0..1)
-      this.marginValue, // final profit SHARE (0..1) — grades the Profit score
-      this.profitCostsFor(this.lastRevenue, this.marginValue).profit, // final Profit, in coins (shown)
+      this.marginValue, // final profit SHARE (0..1) — GRADES the Profit score
+      this.coins, // the final Coins balance — the money the Profit row DISPLAYS
       factory,
       recapLines,
     );

@@ -221,12 +221,13 @@ export const CONSTANTS = {
   // part's SHARE of the sale while the number shows the actual coins. Seeded to a
   // reference 100-coin sale at the starting margin (see CONSTANTS.profitDisplay).
   readouts: [
+    { label: "Coins", value: "$50", fill: 0.17 }, // the running money balance (headline) — seeded from coins.start / coins.max
     { label: "Production Output", value: "120", fill: 0.55 },
     { label: "Raw Materials", value: "120", fill: 1.0 },
     { label: "Worker Satisfaction", value: "68%", fill: 0.68 },
     { label: "Price", value: "$8", fill: 0.4 },
-    { label: "Costs", value: "$78", fill: 0.78 },
-    { label: "Profit", value: "$22", fill: 0.22 },
+    { label: "Costs", value: "$0", fill: 0.0 }, // this run's costs, in coins (0 until the first run)
+    { label: "Profit", value: "$0", fill: 0.0 }, // this run's profit, in coins (0 until the first run)
   ],
 
   // Seeds for the Costs/Profit meters before the first run (a reference sale, so
@@ -235,6 +236,28 @@ export const CONSTANTS = {
   profitDisplay: {
     seedRevenue: 100, // coins of the reference sale used to seed Costs/Profit
     seedMargin: 0.22, // starting profit share of a sale (0..1)
+  },
+
+  // --- Coins: the visible, honest money model (Phase 3.1) ---------------------
+  // A running balance students can actually follow. Each run adds real coins —
+  // revenue (items × price) minus real costs (materials used × material cost, plus
+  // wages) — and one-time actions (reorder / repair / expand / safety guards)
+  // subtract their coin price right away, while filled orders pay their bonus. The
+  // Costs and Profit meters show THIS run's real coin breakdown; the Coins meter
+  // shows the balance. (The abstract profit-margin still GRADES the report — this
+  // is the money the student sees.) If the balance ever hits zero, the foreman
+  // hands over one small loan so the day never dead-ends.
+  coins: {
+    start: 50, // starting purse (coins)
+    max: 300, // a full Coins bar (for the meter fill)
+    wagePerRun: 3, // coins each worker is paid per run
+    orderCost: 12, // coins to reorder raw materials
+    repairCost: 18, // coins to repair the machine after a breakdown
+    expandCost: 40, // coins to expand the line
+    guardsCost: 20, // coins to add safety guards (the safety event)
+    loanAmount: 40, // the one-time loan handed over if the balance hits zero
+    loanText:
+      "You are out of coins! The bank gives you a one-time loan of $40 to keep the factory going. Spend it wisely.",
   },
 
   // --- Order board (the goal that makes every control matter) -----------------

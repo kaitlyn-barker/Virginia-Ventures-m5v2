@@ -169,6 +169,34 @@ function bumpValue(el: HTMLElement): void {
   }, 180);
 }
 
+// showCoinToast(delta): a small "+12 🪙" (green) / "−8 🪙" (red) that floats up and
+// fades beside the corner dashboard whenever the Coins balance changes. Browser-
+// only (a DOM overlay); in a headset the in-world Coins meter's gold flash carries
+// the change. Guarded so a locked-down DOM degrades quietly.
+export function showCoinToast(delta: number): void {
+  if (typeof document === "undefined" || Math.round(delta) === 0) return;
+  const toast = document.createElement("div");
+  const n = Math.abs(Math.round(delta));
+  toast.textContent = `${delta > 0 ? "+" : "−"}$${n} 🪙`;
+  toast.style.position = "fixed";
+  toast.style.left = "340px"; // just right of the top-left dashboard
+  toast.style.top = "46px"; // beside the Coins row (the dashboard's first row)
+  toast.style.zIndex = "1002";
+  toast.style.fontFamily = "system-ui, sans-serif";
+  toast.style.fontWeight = "800";
+  toast.style.fontSize = "16px";
+  toast.style.color = delta > 0 ? "#2e7d32" : "#b3402e"; // green up, red down
+  toast.style.pointerEvents = "none";
+  toast.style.transition = "transform 0.9s ease-out, opacity 0.9s ease-out";
+  document.body.appendChild(toast);
+  // Kick off the float-up + fade on the next frame, then remove it.
+  requestAnimationFrame(() => {
+    toast.style.transform = "translateY(-30px)";
+    toast.style.opacity = "0";
+  });
+  window.setTimeout(() => toast.remove(), 950);
+}
+
 // setFactoryHudStatus(text, tone): update the little pill in the header — the
 // phase of the day. `tone` picks its background color (see STATUS_TONE).
 export function setFactoryHudStatus(

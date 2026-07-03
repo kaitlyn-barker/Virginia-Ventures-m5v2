@@ -85,7 +85,7 @@ IRN-O194-S47-P164-W3-F2-G2-EXP-CBRK-KGRD
 | `TEX` / `IRN` / `LUM` | business: Textile / Ironworks / Lumber |
 | `O###` | Production Output |
 | `S##` | Worker Satisfaction (%) |
-| `P###` | Profit (coins) |
+| `P###` | Coins balance at the end (money) |
 | `W#` | workers hired |
 | `F#` | orders filled |
 | `G#` | predictions guessed right |

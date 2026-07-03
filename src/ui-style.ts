@@ -31,6 +31,7 @@ export type MeterStyle = { icon: string; bar: string; text: string };
 // Keyed by the EXACT board label (CONSTANTS.readouts), so the HUD row and the
 // in-world board row for a given score always share an icon + colors.
 export const METER_STYLE: Record<string, MeterStyle> = {
+  Coins: { icon: "🏦", bar: "#2e7d32", text: "#1f5f24" }, // green — the running money balance
   "Production Output": { icon: "📦", bar: "#4a8fd6", text: "#1e5fa8" }, // blue — volume made
   "Raw Materials": { icon: "🪵", bar: "#b07a3c", text: "#7a5320" }, // woody amber — the supply
   "Worker Satisfaction": { icon: "🙂", bar: "#5fae4a", text: "#2e7d32" }, // green — a happy crew
@@ -41,6 +42,7 @@ export const METER_STYLE: Record<string, MeterStyle> = {
 
 // The order the six meters appear, top to bottom (matches CONSTANTS.readouts).
 export const METER_ORDER = [
+  "Coins",
   "Production Output",
   "Raw Materials",
   "Worker Satisfaction",
