@@ -40,6 +40,8 @@ import {
   PredictionPart,
   ReadoutBoard,
   RestartButton,
+  SafetyButton,
+  SafetyPart,
 } from "./components.js";
 import {
   CALLOUTS,
@@ -67,6 +69,7 @@ import {
 import {
   buildPrediction,
   buildReportBoard,
+  buildSafetyEvent,
   expandCardText,
   hireCardText,
   makeTextPlane,
@@ -132,6 +135,8 @@ export class ProductionSystem extends createSystem({
   orderBoards: { required: [OrderBoard] }, // the buyer-orders board beside the readout board
   predictionPressed: { required: [PredictionButton, Pressed] }, // a prediction answer was tapped
   predictionParts: { required: [PredictionPart] }, // every piece of the current prediction prompt
+  safetyPressed: { required: [SafetyButton, Pressed] }, // a worker-safety choice was tapped
+  safetyParts: { required: [SafetyPart] }, // every piece of the current safety event
   dynamics: { required: [Dynamic] }, // every runtime-built entity — swept away on "Play Again"
 }) {
   // --- Current settings + run state ---
@@ -254,6 +259,13 @@ export class ProductionSystem extends createSystem({
   private predictionsTotal = 0; // predictions resolved so far
   private runStrained = false; // was the run just finished a Fast (crew-straining) one? (for the "fast" outcome)
 
+  // --- Worker-safety event (production vs. workers — a real decision) ---------
+  private safetyEventDone = false; // has the one-time event fired?
+  private safetyEventActive = false; // is the line PAUSED waiting for the choice?
+  private safetyWearRelief = 0; // permanent cut to Fast's machine wear (from choosing guards)
+  private safetyPushRuns = 0; // runs of raised breakdown risk left (from choosing to push on)
+  private safetyDecision: "guards" | "push" | null = null; // what they chose (for the report)
+
   // --- Gentle guidance: the breathing pulse + tidy "only active controls" -----
   private pulseClock = 0; // animation clock for the breathing pulse
   private controlsLaidOut = false; // have we done the first show/hide + even layout of the cards?
@@ -314,6 +326,11 @@ export class ProductionSystem extends createSystem({
     // A prediction answer was tapped → record the guess and clear the prompt.
     this.queries.predictionPressed.subscribe("qualify", (entity) => {
       this.onPredictionAnswer(entity.getValue(PredictionButton, "value") ?? 0);
+    });
+
+    // A worker-safety choice was tapped → apply it and unpause the line.
+    this.queries.safetyPressed.subscribe("qualify", (entity) => {
+      this.onSafetyChoice(entity.getValue(SafetyButton, "value") ?? 0);
     });
   }
 
@@ -442,6 +459,11 @@ export class ProductionSystem extends createSystem({
     this.predictionsRight = 0;
     this.predictionsTotal = 0;
     this.runStrained = false;
+    this.safetyEventDone = false;
+    this.safetyEventActive = false; // any on-screen event UI is disposed by the Dynamic sweep
+    this.safetyWearRelief = 0;
+    this.safetyPushRuns = 0;
+    this.safetyDecision = null;
     this.pulseClock = 0;
     this.controlsLaidOut = false;
     this.startHinted = false;
@@ -675,6 +697,12 @@ export class ProductionSystem extends createSystem({
       return;
     }
 
+    // The worker-safety event pauses the line until the student decides.
+    if (this.safetyEventActive) {
+      this.setNote("A worker is hurt — choose how to handle it before running again.");
+      return;
+    }
+
     const speed = C.speeds[this.speedIndex];
     this.running = true;
     this.runElapsed = 0;
@@ -685,10 +713,13 @@ export class ProductionSystem extends createSystem({
 
     // Decide up front whether the machine breaks down this run. The chance is the
     // business's own risk PLUS the wear we've built up running fast — so a
-    // breakdown grows likely "later," the more we push the pace.
+    // breakdown grows likely "later," the more we push the pace. Choosing to PUSH
+    // ON through the safety event raises the risk for a few runs afterward.
+    const pushRisk = this.safetyPushRuns > 0 ? C.safetyEvent.pushBreakdownBonus : 0;
+    if (this.safetyPushRuns > 0) this.safetyPushRuns -= 1;
     const chance = Math.min(
       C.breakdown.maxChance,
-      factory.breakdownRisk + this.machineWear,
+      factory.breakdownRisk + this.machineWear + pushRisk,
     );
     this.brokeDown = Math.random() < chance;
 
@@ -726,7 +757,9 @@ export class ProductionSystem extends createSystem({
     this.pendingSatisfaction = this.satisfactionFor(factory, speed);
     this.runDuration = speed.runSeconds;
     this.runBeltSpeed = speed.beltSpeed;
-    this.runWearAdd = speed.wearAdd;
+    // Safety guards (if the student chose them) make the machine wear slower for
+    // good — a small permanent relief on top of the pace's own wear.
+    this.runWearAdd = speed.wearAdd - this.safetyWearRelief;
     this.transformed = false;
 
     Sfx.startHum(); // swell in the soft machine drone while the line runs
@@ -939,8 +972,9 @@ export class ProductionSystem extends createSystem({
     // steady supply mattered. Runs AFTER showNote so it takes the note that run.
     this.maybeTeachLowMaterials();
 
-    // Teaching moment (once): name worker safety if the crew is being pushed low.
-    this.maybeTeachWorkerSafety();
+    // The one-time worker-safety EVENT (a real decision), if this Fast run pushed
+    // the crew below the safety line — from the student's own choices, not random.
+    this.maybeFireSafetyEvent();
 
     // First-time hints: nudge the player to keep going after the first run, then
     // toward the foreman after the second. Each is shown only once, then it fades.
@@ -1113,15 +1147,59 @@ export class ProductionSystem extends createSystem({
     this.setNote(CALLOUTS.lowMaterials);
   }
 
-  // Teaching moment (once): the first time the crew's satisfaction falls low,
-  // name worker safety right on the floor, not just in the end report. Display
-  // only. It never changes a run or a score.
-  private maybeTeachWorkerSafety(): void {
+  // --- Worker-safety event ---------------------------------------------------
+  // Once (and only once), the first time the student's OWN pushing — a Fast run
+  // that leaves the crew below the safety threshold — hurts a worker, pause the
+  // line for a real choice: add safety guards or push on. Gated on a Fast run so
+  // it's always earned by their choices, never random. (Called from finishRun,
+  // after the run's satisfaction has settled.)
+  private maybeFireSafetyEvent(): void {
     if (!this.globals.tourDone) return;
-    if (this.taughtWorkerSafety) return;
-    if (this.satisfactionValue >= CONSTANTS.safetyNoteThreshold) return;
-    this.taughtWorkerSafety = true;
-    this.setNote(CALLOUTS.workerSafety);
+    if (this.safetyEventDone) return;
+    if (!this.runStrained) return; // only a Fast (crew-straining) run can trigger it
+    if (this.satisfactionValue >= CONSTANTS.safetyEvent.threshold) return;
+    this.safetyEventDone = true;
+    this.taughtWorkerSafety = true; // the event covers the teaching moment too
+    this.safetyEventActive = true; // pause the line until a choice is made
+    buildSafetyEvent(this.world);
+    Sfx.bell(); // the foreman speaks up (a soft "uh-oh" sfx comes in Phase 3.4)
+    this.setNote(CONSTANTS.safetyEvent.question);
+  }
+
+  // Resolve the safety choice: apply its effects, clear the prompt, unpause.
+  private onSafetyChoice(value: number): void {
+    const S = CONSTANTS.safetyEvent;
+    Sfx.clunk();
+    for (const part of [...this.queries.safetyParts.entities]) {
+      if (part.hasComponent(RayInteractable)) part.removeComponent(RayInteractable);
+      part.dispose();
+    }
+    this.safetyEventActive = false;
+    if (value === 0) {
+      // Add safety guards: pay now, the relieved crew lifts, and the machine wears
+      // slower from here on (a small PERMANENT relief).
+      this.safetyDecision = "guards";
+      this.addCost(S.guardsCostMargin);
+      this.safetyWearRelief = S.guardsWearRelief;
+      this.liftSatisfaction(S.guardsSatisfactionLift);
+      this.setNote(S.guardsResult);
+    } else {
+      // Push on: the shaken crew drops hard, and the machine breaks more for a few
+      // runs.
+      this.safetyDecision = "push";
+      this.safetyPushRuns = S.pushBreakdownRuns;
+      this.liftSatisfaction(-S.pushSatisfactionHit);
+      this.setNote(S.pushResult);
+    }
+  }
+
+  // Nudge Worker Satisfaction by `delta` (kept in band) and glide the meter to it.
+  private liftSatisfaction(delta: number): void {
+    const C = CONSTANTS;
+    const from = this.satisfactionValue;
+    const to = Math.max(C.satisfactionMin, Math.min(C.satisfactionMax, from + delta));
+    this.satisfactionValue = to;
+    this.startTween(this.satisfactionIndex, from, to, from, to, (n) => `${Math.round(n * 100)}%`);
   }
 
   // Glide the Raw Materials meter from an old stock level to the current one.
@@ -1676,6 +1754,7 @@ export class ProductionSystem extends createSystem({
       this.activeOrders.length, // how many were posted in all
       this.predictionsRight, // how many predictions the game bore out
       this.predictionsTotal, // how many predictions were made
+      this.safetyDecision, // the worker-safety choice they made (or null if it never fired)
     );
     board.position.set(0, C.report.y, C.report.z); // float it in front of the player
     this.reportBoard = board;

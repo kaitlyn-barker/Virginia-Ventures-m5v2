@@ -67,6 +67,16 @@ export const PredictionButton = createComponent("PredictionButton", {
 // tapped.
 export const PredictionPart = createComponent("PredictionPart", {});
 
+// The two choice cards on the worker-safety event. `value` is which was chosen
+// (0 = add safety guards, 1 = push on). The ProductionSystem watches for a clicked
+// SafetyButton to resolve the event.
+export const SafetyButton = createComponent("SafetyButton", {
+  value: { type: Types.Int8, default: 0 },
+});
+// Tags every piece of the worker-safety event (its panel + the two choice cards),
+// so the whole thing can be swept away once a choice is made.
+export const SafetyPart = createComponent("SafetyPart", {});
+
 // Marks the small "what to do next" hint banner above the desk. The
 // ProductionSystem finds it through this tag and shows the first-time hints on it,
 // one short line at a time, then fades them away.

@@ -35,6 +35,8 @@ import {
   PredictionButton,
   PredictionPart,
   ReadoutBoard,
+  SafetyButton,
+  SafetyPart,
   TourButton,
   TourPart,
   WelcomePart,
@@ -1044,6 +1046,7 @@ export function buildReportBoard(
   ordersTotal: number = 0, // buyer orders posted in all
   predictionsRight: number = 0, // predictions the game bore out (a recap line)
   predictionsTotal: number = 0, // predictions made in all
+  safetyDecision: "guards" | "push" | null = null, // the worker-safety choice (a recap line)
 ): Mesh {
   const C = CONSTANTS;
   const R = C.report;
@@ -1154,6 +1157,8 @@ export function buildReportBoard(
   const recapLines: string[] = [];
   if (ordersTotal > 0) recapLines.push(`📋 Orders filled: ${ordersFilled} of ${ordersTotal}`);
   if (predictionsTotal > 0) recapLines.push(`🔮 Predictions right: ${predictionsRight} of ${predictionsTotal}`);
+  if (safetyDecision === "guards") recapLines.push("🛡️ Worker safety: added guards");
+  else if (safetyDecision === "push") recapLines.push("⏩ Worker safety: pushed on");
   const areaTop = cardY + titleH;
   const recapLineH = Math.round(cardH * 0.07);
   const recapStripH = recapLines.length * recapLineH;
@@ -1786,5 +1791,68 @@ export function buildPrediction(world: World, prediction: Prediction): void {
       .addComponent(PredictionPart)
       .addComponent(Dynamic);
   });
+}
+
+// =============================================================================
+// buildSafetyEvent
+// Floats the worker-safety decision in front of the player: a cream panel with
+// the "a worker got hurt" line + the foreman's history line, and two choice
+// cards beneath it — a gold "Add safety guards" (the responsible choice) and a
+// red-bordered "Push on" (the risky one). Each card is its own clickable entity
+// carrying a SafetyButton value (0 = guards, 1 = push). Every piece is tagged
+// SafetyPart so the ProductionSystem can sweep the whole event away once a choice
+// is made (Dynamic too, so "Play Again" clears it).
+// =============================================================================
+export function buildSafetyEvent(world: World): void {
+  const S = CONSTANTS.safetyEvent;
+
+  const panel = makeTextPlane({
+    text: `${S.question}\n${S.history}`,
+    icon: "⚠️",
+    width: S.panelW,
+    height: S.panelH,
+    background: UI.cream,
+    textColor: UI.navy,
+    border: UI.gold,
+  });
+  panel.position.set(0, S.y, S.z);
+  world
+    .createTransformEntity(panel)
+    .addComponent(SafetyPart)
+    .addComponent(Dynamic);
+
+  // Option 0 — add safety guards (the responsible, recommended choice): gold.
+  const guards = makeTextPlane({
+    text: S.guardsLabel,
+    width: S.optionW,
+    height: S.optionH,
+    background: UI.gold,
+    textColor: UI.white,
+    border: UI.goldText,
+  });
+  guards.position.set(-S.optionGap, S.optionY, S.z);
+  world
+    .createTransformEntity(guards)
+    .addComponent(RayInteractable)
+    .addComponent(SafetyButton, { value: 0 })
+    .addComponent(SafetyPart)
+    .addComponent(Dynamic);
+
+  // Option 1 — push on (the risky choice): cream with a warning-red border.
+  const push = makeTextPlane({
+    text: S.pushLabel,
+    width: S.optionW,
+    height: S.optionH,
+    background: UI.cream,
+    textColor: UI.navy,
+    border: 0xb3402e, // warning red — this is the risky choice
+  });
+  push.position.set(S.optionGap, S.optionY, S.z);
+  world
+    .createTransformEntity(push)
+    .addComponent(RayInteractable)
+    .addComponent(SafetyButton, { value: 1 })
+    .addComponent(SafetyPart)
+    .addComponent(Dynamic);
 }
 

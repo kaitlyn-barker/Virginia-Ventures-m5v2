@@ -386,7 +386,45 @@ export const CONSTANTS = {
   understaffPenalty: 0.05, // drop per worker the run is short of what its pace needs
   satisfactionMin: 0.05, // never quite empties...
   satisfactionMax: 0.99, // ...nor quite fills
-  safetyNoteThreshold: 0.4, // show the worker-safety note the first time satisfaction falls below this
+
+  // --- Worker-safety event (production vs. workers — a real decision) ---------
+  // Once the student has run the machine FAST and pushed Worker Satisfaction below
+  // `threshold`, a worker gets hurt and the line PAUSES for one choice: add safety
+  // guards (costs coins now, but the crew feels safer AND the machine runs steadier
+  // from then on) or push on (keep the pace, but the shaken crew's satisfaction
+  // drops hard and the machine breaks more for a few runs). It fires ONCE, only
+  // from the student's own pushing — never at random — so it always feels earned,
+  // and it feeds the debrief's "production vs. workers" question. All the numbers
+  // and words live here.
+  safetyEvent: {
+    threshold: 0.45, // fires after a Fast run leaves satisfaction below this
+    // "Add safety guards" outcome:
+    guardsCostMargin: 0.1, // coins spent now (a Profit dip)
+    guardsSatisfactionLift: 0.18, // the relieved crew's satisfaction climbs
+    guardsWearRelief: 0.03, // a PERMANENT cut to how much Fast wears the machine
+    // "Push on" outcome:
+    pushSatisfactionHit: 0.15, // the shaken crew's satisfaction drops hard
+    pushBreakdownBonus: 0.15, // extra breakdown chance...
+    pushBreakdownRuns: 3, // ...for this many runs afterward
+    // Words (4th–5th grade):
+    question: "A worker got hurt pushing the machine so hard!",
+    history: "In real factories, accidents like this led to new safety rules.",
+    guardsLabel: "🛡️ Add safety\nguards",
+    pushLabel: "⏩ Push on",
+    guardsResult:
+      "Safety guards added. The crew feels safer, and the machine runs steadier now.",
+    pushResult:
+      "We pushed on. The shaken crew is uneasy, and the machine may break more for a while.",
+    // Layout (a small modal in front of the player, above the desk):
+    panelW: 3.5, // question panel width (meters)
+    panelH: 0.95, // question panel height (meters)
+    y: 2.05, // how high the question floats
+    z: -2.85, // how far in front (between the desk and the board)
+    optionW: 1.6, // each option card's width (meters)
+    optionH: 0.62, // each option card's height (meters)
+    optionY: 1.35, // options float just below the question
+    optionGap: 0.9, // each option sits this far left/right of center
+  },
 
   // --- Raw materials: the supply the line eats as it runs --------------------
   // The line turns raw material into product one-for-one, so a run uses as many
