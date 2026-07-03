@@ -681,6 +681,9 @@ export function buildProductionLine(): Group {
   line.userData.product = product;
   // Worker figures get added here as they are hired (starts empty).
   line.userData.workers = [];
+  // Expansion-annex pieces get added here if the line is expanded (starts empty).
+  // Both lists let "Play Again" strip the runtime additions back off the line.
+  line.userData.annexParts = [];
 
   return line;
 }

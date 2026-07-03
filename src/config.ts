@@ -501,11 +501,12 @@ export const CONSTANTS = {
   },
 
   // --- Play Again button (on the End of Day report) ---------------------------
-  // A gold button that floats just below the report board. Clicking it reloads the
-  // page for a clean start, so a student can run a DIFFERENT business in the same
-  // class session without a teacher having to refresh the tab. The position sits
-  // between the desk (z -2.1) and the report (z -3.8), low enough to read as "the
-  // day's next step" but still above the desk's sightline so it is never hidden.
+  // A gold button that floats just below the report board. Clicking it resets the
+  // game in place (no page reload), so a student can run a DIFFERENT business in
+  // the same class session without a teacher having to refresh the tab. The
+  // position sits between the desk (z -2.1) and the report (z -3.8), low enough to
+  // read as "the day's next step" but still above the desk's sightline so it is
+  // never hidden.
   restart: {
     label: "Play Again", // button text (kept short + plain for 5th graders)
     icon: "🔄", // a recycle/again glyph leading the label

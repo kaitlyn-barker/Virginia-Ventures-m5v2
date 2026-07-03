@@ -23,6 +23,7 @@
 
 import { World, VisibilityState } from "@iwsdk/core";
 import { UI } from "./ui-style.js";
+import { resetGame } from "./reset.js";
 
 // -----------------------------------------------------------------------------
 // CONSTANTS — the feel of the flat-screen controls. (World-setup-style tunables,
@@ -151,7 +152,8 @@ export function setupBrowserControls(world: World): void {
   // TEACHER RESTART — press "R" to start the whole day over (an escape hatch for
   // a stuck session). Behind a confirm() so a stray keypress can't wipe a good
   // run; flat-screen only (a headset has no keyboard, and the report's own "Play
-  // Again" button covers that case). A reload lands on a clean business picker.
+  // Again" button covers that case). Resets the game in place — no page reload —
+  // landing on a clean business picker.
   // ---------------------------------------------------------------------------
   window.addEventListener("keydown", (event) => {
     if (event.key !== "r" && event.key !== "R") return;
@@ -161,7 +163,7 @@ export function setupBrowserControls(world: World): void {
         "Restart the factory day? This starts over from the business picker.",
       )
     ) {
-      window.location.reload();
+      resetGame(world);
     }
   });
 

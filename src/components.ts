@@ -10,6 +10,15 @@ import {
   createComponent,
 } from "@iwsdk/core";
 
+// Marks every entity BUILT AT RUNTIME once a business is picked (the control desk
+// + cards, both boards + the note, the foreman + his prompt, the report board and
+// its Play Again button, the confetti, the hint banner, and the welcome / goal /
+// tour pieces). "Play Again" resets the game in place by disposing everything
+// tagged Dynamic in one sweep — so nothing dynamic gets missed — then re-showing
+// the business picker. The persistent scenery (room, floor, production line, dust)
+// is NOT tagged, so it survives a reset. See resetGame() in reset.ts.
+export const Dynamic = createComponent("Dynamic", {});
+
 // =============================================================================
 // Setup components (tags the InputSystem and SetupSystem use)
 //
@@ -53,8 +62,8 @@ export const OrderBoard = createComponent("OrderBoard", {});
 export const HintSign = createComponent("HintSign", {});
 
 // Marks the "Play Again" button that appears on the End of Day report. Clicking
-// it reloads the page for a clean, pristine start (so a student can try a
-// different business in the same class session). The ProductionSystem builds the
+// it resets the game in place (see resetGame in reset.ts) so a student can try a
+// different business in the same class session. The ProductionSystem builds the
 // button when it shows the report and watches for the click.
 export const RestartButton = createComponent("RestartButton", {});
 

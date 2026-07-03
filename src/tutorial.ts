@@ -22,6 +22,7 @@ import {
 } from "./ui-style.js";
 import {
   ControlCard,
+  Dynamic,
   Foreman,
   ForemanPrompt,
   ReadoutBoard,
@@ -108,6 +109,22 @@ export class TutorialSystem extends createSystem({
       const want = this.controlForHighlight(step.highlight);
       if ((entity.getValue(ControlCard, "action") ?? 0) === want) this.advanceStep();
     });
+  }
+
+  // Play Again: re-seed the tour state so the whole onboarding runs again from the
+  // goal card. The goal card / tutorial buttons / cockpit are entities disposed by
+  // the Dynamic sweep (see ProductionSystem.reset) — including the "Next ▸" button
+  // this held — so we just drop the stale refs and wind the steps back.
+  reset(): void {
+    this.cockpitPlaced = false;
+    this.tutorialActive = false;
+    this.stepIndex = 0;
+    this.unlockedControls.clear();
+    this.nextEntity = null; // its entity was disposed by the sweep
+    this.nextMesh = null;
+    this.pulseClock = 0;
+    this.panelFading = false;
+    this.panelFadeElapsed = 0;
   }
 
   update(delta: number): void {
@@ -323,7 +340,8 @@ export class TutorialSystem extends createSystem({
       .createTransformEntity(next)
       .addComponent(RayInteractable)
       .addComponent(TourButton, { action: TOUR.next })
-      .addComponent(TourPart);
+      .addComponent(TourPart)
+      .addComponent(Dynamic);
 
     const skip = makeTextPlane({
       text: "Skip tour",
@@ -338,7 +356,8 @@ export class TutorialSystem extends createSystem({
       .createTransformEntity(skip)
       .addComponent(RayInteractable)
       .addComponent(TourButton, { action: TOUR.skip })
-      .addComponent(TourPart);
+      .addComponent(TourPart)
+      .addComponent(Dynamic);
   }
 
   // Sweep away every current tour-UI piece (goal card OR tutorial buttons). Drop

@@ -30,6 +30,7 @@ import {
   UI,
 } from "./ui-style.js";
 import {
+  Dynamic,
   Foreman,
   ForemanPrompt,
 } from "./components.js";
@@ -172,7 +173,7 @@ export function placeForeman(world: World): void {
   foreman.add(panel);
 
   const foremanEntity = world.createTransformEntity(foreman);
-  foremanEntity.addComponent(Foreman);
+  foremanEntity.addComponent(Foreman).addComponent(Dynamic);
   foreman.userData.panel = panel; // the ForemanSystem rewrites this
 
   // The clickable "Next" prompt card beside him (its own ray-clickable entity).
@@ -189,7 +190,8 @@ export function placeForeman(world: World): void {
   world
     .createTransformEntity(prompt)
     .addComponent(RayInteractable)
-    .addComponent(ForemanPrompt);
+    .addComponent(ForemanPrompt)
+    .addComponent(Dynamic);
 
   // The glowing gold ring on the floor beside him — the "stand here" / "hop
   // here" target (offset past the desk's edge so it is visible from spawn).
@@ -249,6 +251,16 @@ export class ForemanSystem extends createSystem({
     this.viewer = new Vector3();
     // Clicking his "Next" card advances the news, same as stepping up to him.
     this.queries.prompts.subscribe("qualify", () => this.advanceNews());
+  }
+
+  // Play Again: re-seed the news state. The foreman figure + his panel are entities
+  // disposed by the Dynamic sweep (see ProductionSystem.reset), so there is nothing
+  // to tear down here — just wind the beats back to the beginning.
+  reset(): void {
+    this.newsIndex = -1;
+    this.revealed = false;
+    this.fadeElapsed = 0;
+    this.armed = true;
   }
 
   update(delta: number): void {

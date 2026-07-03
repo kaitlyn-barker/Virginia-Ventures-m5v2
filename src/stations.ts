@@ -28,6 +28,7 @@ import {
 } from "./ui-style.js";
 import {
   ControlCard,
+  Dynamic,
   FactoryChoice,
   HintSign,
   OrderBoard,
@@ -729,12 +730,14 @@ export function placeControlStation(world: World): void {
   station.desk.position.set(0, 0, CONSTANTS.deskZ); // just in front of the player
   applyShadows(station.desk); // the wooden desk grounds itself (the cards are self-lit, so they're skipped)
   const deskEntity = world.createTransformEntity(station.desk);
+  deskEntity.addComponent(Dynamic);
   // The cards come back in CONTROL order, so the card's index IS its action.
   station.cards.forEach((card, action) => {
     world
       .createTransformEntity(card, deskEntity)
       .addComponent(RayInteractable)
-      .addComponent(ControlCard, { action });
+      .addComponent(ControlCard, { action })
+      .addComponent(Dynamic);
   });
 
   // A small hint banner floats just above the desk. It starts hidden; the
@@ -745,7 +748,7 @@ export function placeControlStation(world: World): void {
   const hint = makeNotePlane(C.hints.width, C.hints.height);
   hint.name = "HintBanner";
   hint.position.set(0, C.hints.y, C.deskZ + C.hints.forward);
-  world.createTransformEntity(hint).addComponent(HintSign);
+  world.createTransformEntity(hint).addComponent(HintSign).addComponent(Dynamic);
 }
 
 // =============================================================================
@@ -762,7 +765,7 @@ export function placeReadoutBoard(world: World): void {
   board.position.set(0, C.boardY, C.lineCenterZ);
   board.rotation.x = C.boardTilt; // tip it down a touch toward the player
   const boardEntity = world.createTransformEntity(board);
-  boardEntity.addComponent(ReadoutBoard); // so the ProductionSystem can find it
+  boardEntity.addComponent(ReadoutBoard).addComponent(Dynamic); // so the ProductionSystem can find it
 
   // Seed the Price row with the chosen business's selling price (coins per
   // product) before the board is ever drawn, so it reads right from the start.
@@ -790,7 +793,7 @@ export function placeReadoutBoard(world: World): void {
   const note = makeNotePlane();
   note.position.set(0, C.noteY, C.lineCenterZ + C.noteForward);
   note.rotation.x = C.boardTilt; // share the board's gentle downward tilt
-  world.createTransformEntity(note);
+  world.createTransformEntity(note).addComponent(Dynamic);
   board.userData.note = note;
 }
 
@@ -971,7 +974,7 @@ export function placeOrderBoard(world: World): void {
   const board = buildOrderBoard();
   board.position.set(C.orders.x, C.boardY, C.lineCenterZ);
   board.rotation.x = C.boardTilt; // share the readout board's gentle downward tilt
-  world.createTransformEntity(board).addComponent(OrderBoard);
+  world.createTransformEntity(board).addComponent(OrderBoard).addComponent(Dynamic);
 }
 
 // =============================================================================
@@ -1560,7 +1563,7 @@ export function buildWelcome(world: World): void {
   // The cream modal header card (non-interactive).
   const panel = makeWelcomePanel();
   panel.position.set(0, C.welcomePanelY, C.welcomeZ);
-  world.createTransformEntity(panel).addComponent(WelcomePart);
+  world.createTransformEntity(panel).addComponent(WelcomePart).addComponent(Dynamic);
 
   // Three business choice cards, evenly spaced left-to-right (i = 0,1,2 ->
   // -gap, 0, +gap). Each is clickable and remembers its place in FACTORY_TYPES.
@@ -1571,7 +1574,8 @@ export function buildWelcome(world: World): void {
       .createTransformEntity(card)
       .addComponent(RayInteractable)
       .addComponent(FactoryChoice, { index: i })
-      .addComponent(WelcomePart);
+      .addComponent(WelcomePart)
+      .addComponent(Dynamic);
   });
 }
 
@@ -1692,7 +1696,7 @@ export function buildGoalCard(world: World): void {
 
   const panel = makeGoalPanel();
   panel.position.set(0, C.goalPanelY, C.goalPanelZ);
-  world.createTransformEntity(panel).addComponent(TourPart);
+  world.createTransformEntity(panel).addComponent(TourPart).addComponent(Dynamic);
 
   // "Start the tour" — the gold primary button.
   const start = makeTextPlane({
@@ -1709,7 +1713,8 @@ export function buildGoalCard(world: World): void {
     .createTransformEntity(start)
     .addComponent(RayInteractable)
     .addComponent(TourButton, { action: TOUR.start })
-    .addComponent(TourPart);
+    .addComponent(TourPart)
+    .addComponent(Dynamic);
 
   // "Skip tour" — a smaller, quieter cream button beside it.
   const skip = makeTextPlane({
@@ -1725,6 +1730,7 @@ export function buildGoalCard(world: World): void {
     .createTransformEntity(skip)
     .addComponent(RayInteractable)
     .addComponent(TourButton, { action: TOUR.skip })
-    .addComponent(TourPart);
+    .addComponent(TourPart)
+    .addComponent(Dynamic);
 }
 

@@ -13,6 +13,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  Object3D,
   Points,
   PointsMaterial,
   Pressed,
@@ -29,6 +30,7 @@ import {
 } from "./ui-style.js";
 import {
   ControlCard,
+  Dynamic,
   FactoryMachine,
   Foreman,
   ForemanPrompt,
@@ -67,6 +69,7 @@ import {
   speedCardText,
 } from "./stations.js";
 import type { OrderRow } from "./stations.js";
+import { resetGame } from "./reset.js";
 
 // =============================================================================
 // ScoreTween — one in-flight number-and-bar animation on the readout board.
@@ -122,6 +125,7 @@ export class ProductionSystem extends createSystem({
   foremanPrompts: { required: [ForemanPrompt] }, // his "Next" news card (tucked away once the day is over)
   restartPressed: { required: [RestartButton, Pressed] }, // the report's "Play Again" button was clicked
   orderBoards: { required: [OrderBoard] }, // the buyer-orders board beside the readout board
+  dynamics: { required: [Dynamic] }, // every runtime-built entity — swept away on "Play Again"
 }) {
   // --- Current settings + run state ---
   private speedIndex = CONSTANTS.defaultSpeedIndex; // 0=Slow, 1=Medium, 2=Fast
@@ -266,34 +270,156 @@ export class ProductionSystem extends createSystem({
     this.costsIndex = C.readouts.findIndex((r) => r.label === "Costs");
     this.profitIndex = C.readouts.findIndex((r) => r.label === "Profit");
     this.priceIndex = C.readouts.findIndex((r) => r.label === "Price");
-    this.outputValue = parseFloat(C.readouts[this.outputIndex].value); // "120" -> 120
-    this.satisfactionValue =
-      parseFloat(C.readouts[this.satisfactionIndex].value) / 100; // "68%" -> 0.68
-    // Seed the profit SHARE + a reference sale; the Costs/Profit meters' seed
-    // numbers (CONSTANTS.readouts) already match these, and the first run replaces
-    // them with the real coin breakdown.
-    this.marginValue = C.profitDisplay.seedMargin; // 0.22
-    this.lastRevenue = C.profitDisplay.seedRevenue; // 100 coins
-    this.materials = C.materials.start; // raw-material units in stock to begin
+    // Seed every per-game mutable field (Production Output / Satisfaction from the
+    // board seeds, the profit-share + reference sale, starting materials, and all
+    // the run/phase/order flags). resetState() is the SINGLE source of truth for a
+    // fresh game — "Play Again" calls it too — so a load and a reset can't drift.
+    this.resetState();
 
     // React the instant a control card is clicked (InputSystem adds Pressed).
     this.queries.pressedCards.subscribe("qualify", (entity) => {
       this.onCardPressed(entity);
     });
 
-    // "Play Again" on the End of Day report → reload the page for a clean start.
-    // All game state lives in memory, so a reload lands the student back on the
-    // business picker with everything reset — the simplest, most robust way to let
-    // them try a different factory in the same class session.
+    // "Play Again" on the End of Day report → reset the game IN PLACE (no page
+    // reload): dispose every dynamic entity, re-seed all state, and re-show the
+    // business picker, so the student can run a different factory instantly.
     this.queries.restartPressed.subscribe("qualify", () => {
       Sfx.clunk();
-      window.location.reload();
+      resetGame(this.world);
     });
 
     // Grab the order board the moment it appears (placed with the cockpit).
     this.queries.orderBoards.subscribe("qualify", (entity) => {
       this.orderBoard = (entity.object3D as Mesh) ?? null;
     });
+  }
+
+  // --- Play Again: tear the game down and re-seed it, in place -----------------
+  // Called by resetGame(). Frees everything this system created during a run — the
+  // smoke, the workers/annex hung on the production line, and every entity tagged
+  // Dynamic (desk, cards, boards, foreman, report, buttons, confetti, hint, note)
+  // — then re-seeds all our state. resetGame() handles the globals, the HUD, and
+  // re-showing the picker; the ForemanSystem and TutorialSystem re-seed their own.
+  reset(): void {
+    // Smoke first (it has its own tidy teardown that frees the shared geometry).
+    this.removeSmokePuff();
+
+    // The production line itself is permanent scenery, but the workers and the
+    // expansion annex were hung on it at runtime — take them off and free them,
+    // and tuck the traveling good back to the start in case we reset mid-run.
+    for (const line of this.queries.lines.entities) {
+      const group = line.object3D;
+      if (!group) continue;
+      const workers = (group.userData.workers as Object3D[]) ?? [];
+      const annex = (group.userData.annexParts as Object3D[]) ?? [];
+      for (const part of [...workers, ...annex]) this.disposeObject3D(part);
+      workers.length = 0;
+      annex.length = 0;
+      const product = group.userData.product as Mesh | undefined;
+      if (product) {
+        product.visible = false;
+        product.position.x = CONSTANTS.intakeX;
+        const glow = product.userData.glow as Mesh | undefined;
+        if (glow) (glow.material as MeshBasicMaterial).opacity = 0;
+      }
+    }
+
+    // Dispose EVERY runtime-built entity in one sweep (copy first — disposing
+    // mutates the live query). Drop RayInteractable first so the InputSystem tidies
+    // its pointer state while the entity is still alive (same as the pick teardown).
+    for (const entity of [...this.queries.dynamics.entities]) {
+      if (entity.hasComponent(RayInteractable)) entity.removeComponent(RayInteractable);
+      entity.dispose();
+    }
+
+    this.resetState();
+  }
+
+  // Remove an Object3D from the scene and free its GPU resources. Used for the
+  // line's runtime children (workers, annex), which are plain Object3Ds, not
+  // entities — each has its own geometry + material, so disposing is safe.
+  private disposeObject3D(obj: Object3D): void {
+    obj.traverse((child) => {
+      const mesh = child as Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      const material = mesh.material;
+      if (Array.isArray(material)) material.forEach((m) => m.dispose());
+      else if (material) material.dispose();
+    });
+    obj.parent?.remove(obj);
+  }
+
+  // Re-seed every per-game mutable field to its opening value. The ONE place that
+  // lists them all — called from init() (so it runs on every load) and reset() (so
+  // Play Again matches a fresh load exactly). Indices/belt spans are set once in
+  // init() and never change, so they are deliberately NOT reset here.
+  private resetState(): void {
+    const C = CONSTANTS;
+    this.speedIndex = C.defaultSpeedIndex;
+    this.running = false;
+    this.runElapsed = 0;
+    this.runDuration = 0;
+    this.runBeltSpeed = 0;
+    this.runWearAdd = 0;
+    this.itemsMade = 0;
+    this.transformed = false;
+    this.brokeDown = false;
+    this.pendingMargin = 0;
+    this.pendingSatisfaction = 0;
+    this.pendingMaterials = 0;
+    this.workers = 0;
+    this.fastStreak = 0;
+    this.materials = C.materials.start;
+    this.taughtFirstHire = false;
+    this.taughtLowMaterials = false;
+    this.taughtWorkerSafety = false;
+    this.machineWear = 0;
+    this.costBurden = 0;
+    this.expandUnlocked = false;
+    this.expandState = "none";
+    this.expandRunsLeft = 0;
+    this.expandAnnexAdded = false;
+    this.outputValue = parseFloat(C.readouts[this.outputIndex].value); // "120" -> 120
+    this.satisfactionValue =
+      parseFloat(C.readouts[this.satisfactionIndex].value) / 100; // "68%" -> 0.68
+    this.marginValue = C.profitDisplay.seedMargin; // 0.22
+    this.lastRevenue = C.profitDisplay.seedRevenue; // 100 coins
+    this.noteShown = false;
+    this.noteFadeElapsed = 0;
+    this.tweens = [];
+    this.priceValue = 0;
+    this.priceSeeded = false;
+    this.competitionStarted = false;
+    this.challenge = null;
+    this.machineDown = false;
+    this.repairing = false;
+    this.repairElapsed = 0;
+    this.smokeElapsed = 0; // the puffs + shared geometry are freed by removeSmokePuff()
+    this.shipmentSlow = false;
+    this.shipmentPending = false;
+    this.shipmentElapsed = 0;
+    this.reportShown = false;
+    this.reportBoard = null; // its entity is disposed by the Dynamic sweep
+    this.reportFadeElapsed = 0;
+    this.confetti = null; // its entity is disposed by the Dynamic sweep
+    this.confettiEntity = null;
+    this.confettiVelocities = null;
+    this.confettiElapsed = 0;
+    this.orderBoard = null; // re-captured when a new board is placed
+    this.activeOrders = [];
+    this.ordersPosted = {};
+    this.ordersFilled = 0;
+    this.stealChecked = false;
+    this.orderPopElapsed = -1;
+    this.pulseClock = 0;
+    this.controlsLaidOut = false;
+    this.startHinted = false;
+    this.runsFinished = 0;
+    this.hintQueue = [];
+    this.hintQueued = { start: false, again: false, foreman: false };
+    this.hintActive = false;
+    this.hintElapsed = 0;
   }
 
   update(delta: number): void {
@@ -1167,6 +1293,9 @@ export class ProductionSystem extends createSystem({
       applyShadows(bin);
       group.add(deck);
       group.add(bin);
+      // Track the runtime-added pieces so "Play Again" can take them back off the
+      // (otherwise permanent) production line.
+      (group.userData.annexParts as Object3D[]).push(deck, bin);
     }
     this.expandAnnexAdded = true;
   }
@@ -1435,12 +1564,12 @@ export class ProductionSystem extends createSystem({
     board.position.set(0, C.report.y, C.report.z); // float it in front of the player
     this.reportBoard = board;
     this.reportFadeElapsed = 0;
-    this.world.createTransformEntity(board);
+    this.world.createTransformEntity(board).addComponent(Dynamic);
 
-    // A gold "Play Again" button just below the report. Clicking it reloads the
-    // page for a clean start, so a student can try a DIFFERENT business in the
-    // same class session (the reload lands back on the business picker). Same
-    // card style as the tour's "Start the tour" button.
+    // A gold "Play Again" button just below the report. Clicking it resets the
+    // game in place (see resetGame) so a student can try a DIFFERENT business in
+    // the same class session — it lands back on the business picker. Same card
+    // style as the tour's "Start the tour" button.
     const R = C.restart;
     const againButton = makeTextPlane({
       text: R.label,
@@ -1455,7 +1584,8 @@ export class ProductionSystem extends createSystem({
     this.world
       .createTransformEntity(againButton)
       .addComponent(RayInteractable)
-      .addComponent(RestartButton);
+      .addComponent(RestartButton)
+      .addComponent(Dynamic);
 
     this.spawnConfetti(); // the day is done — make it feel like a win screen
 
@@ -1512,7 +1642,9 @@ export class ProductionSystem extends createSystem({
     this.confetti = confetti;
     this.confettiVelocities = velocities;
     this.confettiElapsed = 0;
-    this.confettiEntity = this.world.createTransformEntity(confetti);
+    this.confettiEntity = this.world
+      .createTransformEntity(confetti)
+      .addComponent(Dynamic);
   }
 
   // Rain the confetti down (simple gravity), fade it out over its last stretch,
