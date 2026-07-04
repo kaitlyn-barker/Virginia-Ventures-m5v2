@@ -361,11 +361,13 @@ export function drawWrapped(
 // so the card always reads the same way.
 // =============================================================================
 export function speedCardText(label: string): string {
-  // Show the plain-language tradeoff for the current pace right on the card, so
-  // the speed/wear/crew choice is legible without having to discover it.
+  // Two big lines — the control's name, then the current pace with its speed
+  // multiplier in ‹ chevrons › ("click to change"). Kept short so it stays as
+  // large and legible as the other cards; the crew/machine tradeoff of going
+  // faster is taught by the foreman + the live Worker Satisfaction / breakdowns.
   const speed = CONSTANTS.speeds.find((s) => s.label === label);
-  const blurb = speed?.blurb ? `\n${speed.blurb}` : "";
-  return `Machine Speed\n‹ ${label} ›${blurb}`;
+  const mult = speed ? ` · ${speed.multiplier}×` : "";
+  return `Machine Speed\n‹ ${label}${mult} ›`;
 }
 
 // =============================================================================

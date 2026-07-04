@@ -373,9 +373,9 @@ export const CONSTANTS = {
   //   wearAdd           — how much this pace wears the MACHINE each run: Fast piles
   //                       on wear (a breakdown grows likely), Slow lets it recover (−)
   speeds: [
-    { label: "Slow", multiplier: 1, runSeconds: 4.0, beltSpeed: 0.9, marginBonus: -0.05, satisfactionDrift: 0.06, strainsCrew: false, wearAdd: -0.04, blurb: "1× — kind to the crew & machine" },
-    { label: "Medium", multiplier: 2, runSeconds: 3.0, beltSpeed: 1.7, marginBonus: 0.0, satisfactionDrift: 0.03, strainsCrew: false, wearAdd: 0.03, blurb: "2× — a balanced pace" },
-    { label: "Fast", multiplier: 3, runSeconds: 2.0, beltSpeed: 2.8, marginBonus: 0.06, satisfactionDrift: -0.06, strainsCrew: true, wearAdd: 0.12, blurb: "3× — but tires the crew & wears the machine" },
+    { label: "Slow", multiplier: 1, runSeconds: 4.0, beltSpeed: 0.9, marginBonus: -0.05, satisfactionDrift: 0.06, strainsCrew: false, wearAdd: -0.04 },
+    { label: "Medium", multiplier: 2, runSeconds: 3.0, beltSpeed: 1.7, marginBonus: 0.0, satisfactionDrift: 0.03, strainsCrew: false, wearAdd: 0.03 },
+    { label: "Fast", multiplier: 3, runSeconds: 2.0, beltSpeed: 2.8, marginBonus: 0.06, satisfactionDrift: -0.06, strainsCrew: true, wearAdd: 0.12 },
   ] as SpeedSetting[],
   defaultSpeedIndex: 0, // start on "Slow" so speeding up feels like a real choice
 
@@ -749,7 +749,6 @@ export type SpeedSetting = {
   satisfactionDrift: number; // how Worker Satisfaction drifts each run at this pace
   strainsCrew: boolean; // hardest pace? running it repeatedly wears the crew down
   wearAdd: number; // how much this pace wears the machine each run (− lets it recover)
-  blurb: string; // the plain-language tradeoff shown on the Machine Speed card
 };
 
 // =============================================================================
