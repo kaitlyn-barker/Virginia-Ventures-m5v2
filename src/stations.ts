@@ -20,8 +20,10 @@ import {
   World,
 } from "@iwsdk/core";
 import {
+  createDayMeter,
   updateFactoryHud,
 } from "./hud.js";
+import { runsBeforeClosing } from "./dev.js";
 import {
   METER_STYLE,
   UI,
@@ -29,6 +31,7 @@ import {
 } from "./ui-style.js";
 import {
   ControlCard,
+  DayPanel,
   Dynamic,
   FactoryChoice,
   HintSign,
@@ -1011,6 +1014,126 @@ export function placeOrderBoard(world: World): void {
   board.position.set(C.orders.x, C.boardY, C.lineCenterZ);
   board.rotation.x = C.boardTilt; // share the readout board's gentle downward tilt
   world.createTransformEntity(board).addComponent(OrderBoard).addComponent(Dynamic);
+}
+
+// =============================================================================
+// buildDayPanel
+// The in-world "Day Progress" panel — a rounded cream card (like the order board)
+// that fills as the student completes production runs. Shows "Run X of Y", a gold
+// progress bar, and a short status line. Holds `userData.setProgress(done, total)`
+// which the ProductionSystem calls each run. Mirrors the order board so the three
+// panels (Orders · Dashboard · Day) read as one dashboard across the top.
+// =============================================================================
+export function buildDayPanel(): Mesh {
+  const D = CONSTANTS.dayMeter;
+  const pxPerMeter = 320;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(D.width * pxPerMeter);
+  canvas.height = Math.round(D.height * pxPerMeter);
+  const ctx = canvas.getContext("2d")!;
+  const W = canvas.width;
+  const H = canvas.height;
+
+  let done = 0; // runs completed so far
+  let total = 1; // the day's length in runs (seeded by setProgress)
+
+  const redraw = (): void => {
+    ctx.clearRect(0, 0, W, H);
+
+    // Card + navy border + soft shadow (same look as the order board).
+    const M = Math.round(H * 0.025);
+    const cardX = M;
+    const cardY = M;
+    const cardW = W - M * 2;
+    const cardH = H - M * 2;
+    const radius = Math.round(H * 0.05);
+    drawCard(ctx, cardX, cardY, cardW, cardH, {
+      fill: UI.cream,
+      stroke: UI.navy,
+      lineWidth: 6,
+      radius,
+      shadow: true,
+    });
+
+    // Teal title band, clipped to the rounded top corners.
+    const titleH = Math.round(cardH * 0.13);
+    ctx.save();
+    roundRectPath(ctx, cardX, cardY, cardW, cardH, radius);
+    ctx.clip();
+    ctx.fillStyle = new Color(CONSTANTS.tealColor).getStyle();
+    ctx.fillRect(cardX, cardY, cardW, titleH);
+    ctx.restore();
+    ctx.fillStyle = UI.white;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `bold ${Math.round(titleH * 0.52)}px sans-serif`;
+    ctx.fillText("🕒 Day Progress", W / 2, cardY + titleH / 2);
+
+    const clamped = Math.max(0, Math.min(total, done));
+    const frac = total > 0 ? clamped / total : 0;
+    const pad = cardX + Math.round(cardW * 0.08);
+    const innerW = cardW - Math.round(cardW * 0.16);
+
+    // The big "Run X of Y" count.
+    ctx.fillStyle = UI.navy;
+    ctx.font = `bold ${Math.round(cardH * 0.17)}px sans-serif`;
+    ctx.fillText(`Run ${clamped} of ${total}`, W / 2, cardY + titleH + cardH * 0.24);
+
+    // The progress bar (track + gold fill).
+    const barY = cardY + titleH + cardH * 0.44;
+    const barH = Math.round(cardH * 0.12);
+    roundRectPath(ctx, pad, barY, innerW, barH, barH / 2);
+    ctx.fillStyle = UI.track;
+    ctx.fill();
+    if (frac > 0) {
+      roundRectPath(ctx, pad, barY, Math.max(barH, innerW * frac), barH, barH / 2);
+      ctx.fillStyle = new Color(D.barColor).getStyle();
+      ctx.fill();
+    }
+
+    // A short status line under the bar.
+    const status =
+      clamped >= total
+        ? "The whistle blows — day's end!"
+        : clamped === total - 1
+          ? "Last run of the day!"
+          : "Keep the line running.";
+    ctx.fillStyle = UI.goldText;
+    ctx.font = `${Math.round(cardH * 0.08)}px sans-serif`;
+    ctx.fillText(status, W / 2, cardY + titleH + cardH * 0.66);
+  };
+
+  redraw();
+
+  const panel = makeCanvasPlane(canvas, D.width, D.height, true);
+  panel.name = "DayPanel";
+  panel.userData.setProgress = (d: number, t: number): void => {
+    done = d;
+    total = t;
+    redraw();
+    (panel.material as MeshBasicMaterial).map!.needsUpdate = true;
+  };
+  return panel;
+}
+
+// =============================================================================
+// placeDayPanel
+// Drops the day-progress panel to the RIGHT of the readout board (same height,
+// depth, and tilt), tagged DayPanel so the ProductionSystem can update it, and
+// creates the matching top-right DOM meter for the browser view. Both are seeded
+// at 0 of the day's length (runsBeforeClosing).
+// =============================================================================
+export function placeDayPanel(world: World): void {
+  const C = CONSTANTS;
+  const panel = buildDayPanel();
+  panel.position.set(C.dayMeter.x, C.boardY, C.lineCenterZ);
+  panel.rotation.x = C.boardTilt; // share the readout board's gentle downward tilt
+  world.createTransformEntity(panel).addComponent(DayPanel).addComponent(Dynamic);
+
+  // Seed both the in-world panel and the browser DOM meter at 0 of the day length.
+  const total = runsBeforeClosing();
+  (panel.userData.setProgress as (d: number, t: number) => void)(0, total);
+  createDayMeter(0, total);
 }
 
 // =============================================================================

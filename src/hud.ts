@@ -202,6 +202,100 @@ export function showCoinToast(delta: number): void {
   window.setTimeout(() => toast.remove(), 950);
 }
 
+// =============================================================================
+// Day-progress meter — a separate DOM card pinned top-RIGHT (the corner opposite
+// the factory dashboard). It fills as the student completes production runs
+// through the work day; when the runs reach the day's length, the End of Day
+// report appears. Browser-only (a DOM overlay); in a headset the in-world day
+// panel beside the boards carries the same progress (see stations.buildDayPanel).
+// =============================================================================
+let dayBarEl: HTMLElement | null = null; // the live progress-bar fill
+let dayLabelEl: HTMLElement | null = null; // the live "Run X of Y" text
+
+// createDayMeter(done, total): build the top-right card once (removing any prior),
+// seeded with the current run count out of the day's length.
+export function createDayMeter(done: number, total: number): void {
+  if (typeof document === "undefined") return; // headless safety
+  document.getElementById("day-meter")?.remove(); // never stack two
+
+  const card = document.createElement("div");
+  card.id = "day-meter";
+  card.style.position = "fixed";
+  card.style.top = "16px";
+  card.style.right = "16px";
+  card.style.zIndex = "1000";
+  card.style.minWidth = "190px";
+  card.style.background = UI.creamHud;
+  card.style.padding = "12px 16px";
+  card.style.borderRadius = "14px";
+  card.style.border = `2px solid ${UI.navy}`;
+  card.style.fontFamily = "system-ui, sans-serif";
+  card.style.boxShadow = `0 4px 14px ${UI.shadow}`;
+  card.style.pointerEvents = "none"; // display-only; never blocks a click
+
+  const header = document.createElement("div");
+  header.style.display = "flex";
+  header.style.alignItems = "center";
+  header.style.justifyContent = "space-between";
+  header.style.gap = "12px";
+  header.style.marginBottom = "8px";
+
+  const title = document.createElement("span");
+  title.textContent = "🕒 Day Progress";
+  title.style.color = UI.navy;
+  title.style.fontWeight = "800";
+  title.style.fontSize = "15px";
+
+  const label = document.createElement("span");
+  label.style.color = UI.goldText;
+  label.style.fontWeight = "800";
+  label.style.fontSize = "13px";
+  label.style.whiteSpace = "nowrap";
+
+  header.appendChild(title);
+  header.appendChild(label);
+  card.appendChild(header);
+
+  const track = document.createElement("div");
+  track.style.height = "12px";
+  track.style.background = UI.track;
+  track.style.borderRadius = "6px";
+  track.style.overflow = "hidden";
+
+  const bar = document.createElement("div");
+  bar.style.height = "100%";
+  bar.style.width = "0%";
+  bar.style.background = UI.gold;
+  bar.style.borderRadius = "6px";
+  bar.style.transition = "width 0.45s ease"; // the bar glides as the day fills
+
+  track.appendChild(bar);
+  card.appendChild(track);
+
+  document.body.appendChild(card);
+  dayBarEl = bar;
+  dayLabelEl = label;
+  updateDayMeter(done, total);
+}
+
+// updateDayMeter(done, total): set the "Run X of Y" text and the bar width.
+export function updateDayMeter(done: number, total: number): void {
+  const clamped = Math.max(0, Math.min(total, done));
+  if (dayLabelEl) dayLabelEl.textContent = `Run ${clamped} of ${total}`;
+  if (dayBarEl) {
+    dayBarEl.style.width = (total > 0 ? clamped / total : 0) * 100 + "%";
+  }
+}
+
+// hideDayMeter(): remove the card (called on "Play Again" / reset).
+export function hideDayMeter(): void {
+  if (typeof document !== "undefined") {
+    document.getElementById("day-meter")?.remove();
+  }
+  dayBarEl = null;
+  dayLabelEl = null;
+}
+
 // setFactoryHudStatus(text, tone): update the little pill in the header — the
 // phase of the day. `tone` picks its background color (see STATUS_TONE).
 export function setFactoryHudStatus(

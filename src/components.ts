@@ -56,6 +56,11 @@ export const ReadoutBoard = createComponent("ReadoutBoard", {});
 // stamp them FILLED or LOST.
 export const OrderBoard = createComponent("OrderBoard", {});
 
+// Marks the day-progress panel (to the RIGHT of the readout board). The
+// ProductionSystem finds it through this tag to fill it in as runs complete; when
+// it reaches the day's length, the End of Day report appears.
+export const DayPanel = createComponent("DayPanel", {});
+
 // The two answer buttons on a one-tap prediction prompt. `value` is which option
 // was tapped (0 or 1). The ProductionSystem watches for a clicked PredictionButton
 // to record the guess.

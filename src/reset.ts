@@ -24,7 +24,7 @@ import { ForemanSystem } from "./foreman.js";
 import { TutorialSystem } from "./tutorial.js";
 import { buildWelcome } from "./stations.js";
 import { CONSTANTS } from "./config.js";
-import { updateFactoryHud, setFactoryHudStatus } from "./hud.js";
+import { updateFactoryHud, setFactoryHudStatus, hideDayMeter } from "./hud.js";
 
 export function resetGame(world: World): void {
   // 1. Each system tears down its runtime entities and re-seeds its own state.
@@ -53,6 +53,7 @@ export function resetGame(world: World): void {
   }));
   updateFactoryHud(seed);
   setFactoryHudStatus("Getting Ready", "ready");
+  hideDayMeter(); // clear the top-right day-progress card until the next day starts
 
   // 4. Re-show the business picker on the now-clear floor.
   buildWelcome(world);

@@ -295,6 +295,20 @@ export const CONSTANTS = {
     lostColor: 0xb3402e, // red — the rival took it
   },
 
+  // --- Day progress meter (top-right) -----------------------------------------
+  // A panel that fills as the student completes production runs through the work
+  // day. It sits to the RIGHT of the readout board (mirroring the order board on
+  // the left), so the three panels read as one dashboard. When the runs reach the
+  // day's length (runsBeforeClosing — the same run count the closing whistle used),
+  // the End of Day report appears automatically. The browser shows the same meter
+  // as a top-right DOM card (hud.ts); the headset reads this in-world panel.
+  dayMeter: {
+    x: 3.9, // to the RIGHT of the readout board (mirrors the order board's -3.9)
+    width: 2.7, // same footprint as the order board, for a balanced three-panel row
+    height: 2.4, // matches the order + readout boards (shares boardY / boardTilt)
+    barColor: 0xc8962a, // gold — the work day filling up toward the closing whistle
+  },
+
   // --- Prediction prompts (one-tap "what will happen?" — see PREDICTIONS) ------
   // A question panel floats in front of the player (between the desk and the
   // board) with two tappable answer buttons beneath it. It appears at a decision

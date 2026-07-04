@@ -368,7 +368,7 @@ export class ForemanSystem extends createSystem({
   // beat is a phase gate still waiting on more production runs (mirrors the gates
   // in advanceNews, so the notice only lights when a click would truly reveal news).
   private hasNewMessage(): boolean {
-    if (!this.globals.tourDone) return false;
+    if (!this.globals.tourDone || this.globals.dayOver) return false;
     const nextIndex = Math.min(this.newsIndex + 1, FOREMAN_NEWS.length - 1);
     if (nextIndex === this.newsIndex) return false; // already at the last beat
     const runs = (this.globals.runsCompleted as number) ?? 0;

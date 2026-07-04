@@ -34,6 +34,7 @@ import {
   Dynamic,
   FactoryMachine,
   Foreman,
+  DayPanel,
   ForemanPrompt,
   HintSign,
   OrderBoard,
@@ -81,8 +82,8 @@ import {
 } from "./stations.js";
 import type { OrderRow } from "./stations.js";
 import { resetGame } from "./reset.js";
-import { showCoinToast } from "./hud.js";
-import { forcedChallenge } from "./dev.js";
+import { showCoinToast, updateDayMeter } from "./hud.js";
+import { forcedChallenge, runsBeforeClosing } from "./dev.js";
 
 // =============================================================================
 // ScoreTween — one in-flight number-and-bar animation on the readout board.
@@ -138,6 +139,7 @@ export class ProductionSystem extends createSystem({
   foremanPrompts: { required: [ForemanPrompt] }, // his "Next" news card (tucked away once the day is over)
   restartPressed: { required: [RestartButton, Pressed] }, // the report's "Play Again" button was clicked
   orderBoards: { required: [OrderBoard] }, // the buyer-orders board beside the readout board
+  dayPanels: { required: [DayPanel] }, // the day-progress panel (fills as runs complete)
   predictionPressed: { required: [PredictionButton, Pressed] }, // a prediction answer was tapped
   predictionParts: { required: [PredictionPart] }, // every piece of the current prediction prompt
   safetyPressed: { required: [SafetyButton, Pressed] }, // a worker-safety choice was tapped
@@ -1119,6 +1121,21 @@ export class ProductionSystem extends createSystem({
     this.globals.runsCompleted = this.runsFinished;
     if (this.runsFinished === 1) this.queueHint("again");
     if (this.runsFinished === 2) this.queueHint("foreman");
+
+    // Advance the day-progress meter (top-right, in the browser DOM + the in-world
+    // panel), and END THE DAY automatically once the runs reach the day's length.
+    // Setting dayOver here makes update() show the End of Day report next frame —
+    // the same path the foreman's closing beat used, so nothing downstream changes.
+    const dayTarget = runsBeforeClosing();
+    updateDayMeter(this.runsFinished, dayTarget);
+    for (const panel of this.queries.dayPanels.entities) {
+      (panel.object3D?.userData.setProgress as
+        | ((d: number, t: number) => void)
+        | undefined)?.(this.runsFinished, dayTarget);
+    }
+    if (this.runsFinished >= dayTarget && !this.globals.dayOver) {
+      this.globals.dayOver = true;
+    }
 
     // Credit this batch toward every open order, and settle any that just filled
     // or ran out of time. (A broken run makes no goods, so it never calls this —

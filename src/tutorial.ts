@@ -46,6 +46,7 @@ import {
   placeControlStation,
   placeReadoutBoard,
   placeOrderBoard,
+  placeDayPanel,
 } from "./stations.js";
 
 // =============================================================================
@@ -205,6 +206,7 @@ export class TutorialSystem extends createSystem({
     placeControlStation(this.world);
     placeReadoutBoard(this.world);
     placeOrderBoard(this.world);
+    placeDayPanel(this.world);
     placeForeman(this.world);
     this.cockpitPlaced = true;
   }
