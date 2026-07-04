@@ -700,11 +700,14 @@ export const CONSTANTS = {
     skipButtonPos: [1.0, 0.82, -3.45] as [number, number, number],
 
     // The tutorial's own "Next ▸" + "Skip tour" buttons (shown while the foreman
-    // talks, once the cockpit is up). They sit just above the desk, in front of
-    // the control cards, so they are easy to click without hiding the controls.
+    // talks, once the cockpit is up). They sit just above the desk, FLANKING the
+    // production line so the machine/furnace behind stays in view — Next to the
+    // left of center, Skip to the right (they mustn't cover the star of the tour,
+    // the machine, which sits at x≈0 far back at z-9 and so projects onto the
+    // screen center from this depth).
     nextButtonW: 1.25, // the gold "Next ▸" button
     nextButtonH: 0.42,
-    nextButtonPos: [-0.55, 1.42, -2.72] as [number, number, number],
+    nextButtonPos: [-1.2, 1.42, -2.72] as [number, number, number],
     tourSkipButtonW: 0.98, // the smaller "Skip tour" button beside it
     tourSkipButtonH: 0.34,
     tourSkipButtonPos: [0.95, 1.4, -2.72] as [number, number, number],
