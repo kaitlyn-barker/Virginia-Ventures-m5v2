@@ -48,7 +48,9 @@ import {
   CONSTANTS,
   CONTROL,
   HINTS,
+  IDLE_NUDGE_SECONDS,
   ORDERS,
+  PACING_NUDGE,
   PHASE3_CHALLENGES,
   PREDICTIONS,
   fillNews,
@@ -285,6 +287,7 @@ export class ProductionSystem extends createSystem({
 
   // --- Gentle guidance: the breathing pulse + tidy "only active controls" -----
   private pulseClock = 0; // animation clock for the breathing pulse
+  private idleTime = 0; // seconds since the student last pressed a control (drives idle nudges)
   private controlsLaidOut = false; // have we done the first show/hide + even layout of the cards?
   private startHinted = false; // has the first "run your factory" hint been queued (after the tour)?
 
@@ -496,6 +499,7 @@ export class ProductionSystem extends createSystem({
     this.safetyPushRuns = 0;
     this.safetyDecision = null;
     this.pulseClock = 0;
+    this.idleTime = 0;
     this.controlsLaidOut = false;
     this.startHinted = false;
     this.runsFinished = 0;
@@ -583,12 +587,45 @@ export class ProductionSystem extends createSystem({
     if (this.globals.tourDone) {
       this.updateGuidancePulse(delta);
       this.advanceHints(delta);
+      this.updateIdleNudge(delta);
+    }
+  }
+
+  // Keep a 30-minute class block moving: if the student stalls after the tour —
+  // nothing running, no modal open, day not over — the foreman offers a nudge
+  // that fits the moment. The clock resets on any control press (onCardPressed).
+  private updateIdleNudge(delta: number): void {
+    // Don't count time while something is already happening or a decision is up.
+    if (
+      this.running ||
+      this.repairing ||
+      this.machineDown ||
+      this.reportShown ||
+      this.globals.dayOver ||
+      this.safetyEventActive ||
+      this.pendingPrediction ||
+      this.shipElapsed >= 0
+    ) {
+      this.idleTime = 0;
+      return;
+    }
+    this.idleTime += delta;
+    if (this.idleTime < IDLE_NUDGE_SECONDS) return;
+    this.idleTime = 0; // wait another full stretch before nudging again
+    // Pick the nudge that fits: out of stock → order; growth unlocked → grow; else run.
+    if (this.materials <= CONSTANTS.materials.lowThreshold) {
+      this.setNote(PACING_NUDGE.idleOrder);
+    } else if (this.expandUnlocked && this.expandState === "none") {
+      this.setNote(PACING_NUDGE.idleGrow);
+    } else {
+      this.setNote(PACING_NUDGE.idleRun);
     }
   }
 
   // --- Click handling --------------------------------------------------------
   private onCardPressed(entity: ReturnType<World["createTransformEntity"]>): void {
     Sfx.clunk(); // a soft woody click whenever a control is used
+    this.idleTime = 0; // the student just acted — reset the idle-nudge clock
     const action = entity.getValue(ControlCard, "action") ?? 0;
     if (action === CONTROL.speed) {
       this.cycleSpeed(entity);

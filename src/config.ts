@@ -876,7 +876,16 @@ export const PACING_NUDGE = {
     "Not yet. Keep the line running and try growing the factory first. Hire a hand, change the speed, or expand. Come back once you have a few more runs done.",
   closing:
     "The day is not over yet. Keep the factory going and work through the trouble on the floor. We will close up once we have pushed through.",
+  // Idle nudges — the foreman speaks up if the student stalls (see idleNudgeSeconds),
+  // picking whichever fits the moment so there is no dead time on the floor.
+  idleRun: "The line is quiet — press Start Line to make another batch.",
+  idleOrder: "Raw materials are running low. Order more so the line can keep going.",
+  idleGrow: "Buyers want more. Try growing — hire a hand, change the speed, or expand the line.",
 };
+
+// How long the student can go without pressing anything (after the tour) before
+// the foreman offers a contextual nudge. Keeps a 30-minute class block moving.
+export const IDLE_NUDGE_SECONDS = 25;
 
 // Fill the "{product}" / "{material}" / "{machine}" placeholders in a beat with
 // the chosen business's words. (Plain split/join — no replaceAll — to stay
