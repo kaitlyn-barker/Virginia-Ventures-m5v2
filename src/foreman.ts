@@ -40,10 +40,9 @@ import {
   CONSTANTS,
   FOREMAN_NEWS,
   PACING_NUDGE,
-  RUNS_BEFORE_CLOSING,
-  RUNS_BEFORE_COMPETITION,
   fillNews,
 } from "./config.js";
+import { runsBeforeClosing, runsBeforeCompetition } from "./dev.js";
 import type {
   FactoryType,
 } from "./config.js";
@@ -315,10 +314,11 @@ export class ForemanSystem extends createSystem({
     const runs = (this.globals.runsCompleted as number) ?? 0;
 
     // Gate 1: hold the competitor (Phase 3) until the student has scaled up.
+    // (The gate values are shrunk by ?fast=1 for quick QA — see dev.ts.)
     if (
       this.newsIndex < COMPETITION_BEAT &&
       nextIndex >= COMPETITION_BEAT &&
-      runs < RUNS_BEFORE_COMPETITION
+      runs < runsBeforeCompetition()
     ) {
       (panel.userData.setText as (text: string) => void)(PACING_NUDGE.competition);
       panel.visible = true;
@@ -330,7 +330,7 @@ export class ForemanSystem extends createSystem({
     if (
       this.newsIndex < CLOSING_BEAT &&
       nextIndex >= CLOSING_BEAT &&
-      runs < RUNS_BEFORE_CLOSING
+      runs < runsBeforeClosing()
     ) {
       (panel.userData.setText as (text: string) => void)(PACING_NUDGE.closing);
       panel.visible = true;

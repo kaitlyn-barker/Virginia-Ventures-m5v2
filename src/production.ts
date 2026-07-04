@@ -82,6 +82,7 @@ import type { OrderRow } from "./stations.js";
 import { resetGame } from "./reset.js";
 import { showReportSummary } from "./report-summary.js";
 import { showCoinToast } from "./hud.js";
+import { forcedChallenge } from "./dev.js";
 
 // =============================================================================
 // ScoreTween — one in-flight number-and-bar animation on the readout board.
@@ -1784,6 +1785,11 @@ export class ProductionSystem extends createSystem({
         picked = eligible[i];
         break;
       }
+    }
+    // QA override: ?challenge=<id> forces a specific setback (see dev.ts).
+    const forced = forcedChallenge();
+    if (forced) {
+      picked = PHASE3_CHALLENGES.find((c) => c.id === forced) ?? picked;
     }
     this.challenge = picked;
 

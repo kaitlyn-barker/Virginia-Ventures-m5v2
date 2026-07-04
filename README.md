@@ -163,6 +163,37 @@ communicate through `world.globals` flags and shared components.
 
 ---
 
+## QA & dev params
+
+Opt-in URL parameters (in `src/dev.ts`) make a full playthrough testable in
+minutes instead of a long real-time session. They are harmless in normal use (a
+teacher would have to type them):
+
+| Param | Effect |
+| --- | --- |
+| `?fast=1` | Shrinks the run gates to 1 / 2, so Phase 3 (competitor) and the End of Day report arrive after just a couple of runs. |
+| `?challenge=breakdown` \| `delay` \| `walkout` \| `pricewar` | Forces that Phase-3 setback when the competitor opens, instead of the weighted random pick. |
+
+Combine them, e.g. `…/?fast=1&challenge=walkout`.
+
+**QA script** (run after each phase):
+
+1. **Full mouse playthrough:** tour → a few runs → hire ×2 → order materials →
+   expand → force each challenge via `?challenge=` → reach the End of Day report →
+   check the report bands match the final board numbers and the class code decodes
+   → **Play Again** → pick a *different* factory and confirm a clean second run.
+2. **Touch** (Chrome device mode) and the **WebXR emulator:** confirm board
+   legibility, the touch joystick + drag-look, teleport/snap-turn, and that the
+   DOM HUD is absent in-headset (the in-world board carries everything).
+3. **Skip-tour path:** verify the "press Start" hint appears and nothing references
+   tour state.
+4. **Run-dry path:** run materials to 0 → the line refuses with a clear message →
+   order → runs again.
+5. **Performance:** hold the 72 fps target on Quest-class settings — no long GC
+   pauses, no new per-frame allocations.
+
+---
+
 ## Conventions
 
 - **One system per file, with its related components.** No barrel `index.ts`.
