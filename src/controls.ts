@@ -25,6 +25,7 @@ import { World, VisibilityState } from "@iwsdk/core";
 import { UI } from "./ui-style.js";
 import { resetGame } from "./reset.js";
 import { Sfx } from "./sfx.js";
+import { ProductionSystem } from "./production.js";
 
 // -----------------------------------------------------------------------------
 // CONSTANTS — the feel of the flat-screen controls. (World-setup-style tunables,
@@ -165,6 +166,21 @@ export function setupBrowserControls(world: World): void {
       )
     ) {
       resetGame(world);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // KEYBOARD CONTROLS — number keys 1–6 trigger the desk cards (in CONTROL order:
+  // 1 Machine Speed, 2 Hire, 3 Order, 4 Repair, 5 Expand, 6 Start Line), matching
+  // the digit shown on each card, for students who struggle with mouse/ray
+  // precision. Flat-screen only; the ProductionSystem ignores keys for hidden or
+  // tour-locked controls.
+  // ---------------------------------------------------------------------------
+  window.addEventListener("keydown", (event) => {
+    if (!inBrowser()) return;
+    const n = Number(event.key);
+    if (Number.isInteger(n) && n >= 1 && n <= 6) {
+      (world.getSystem(ProductionSystem) as ProductionSystem | undefined)?.pressControl(n - 1);
     }
   });
 

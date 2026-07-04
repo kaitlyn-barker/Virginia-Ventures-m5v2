@@ -27,6 +27,7 @@ import {
 } from "./sfx.js";
 import {
   UI,
+  prefersReducedMotion,
 } from "./ui-style.js";
 import {
   ControlCard,
@@ -624,6 +625,21 @@ export class ProductionSystem extends createSystem({
   }
 
   // --- Click handling --------------------------------------------------------
+  // Trigger a control by its action (0–5), as if its card were clicked — for the
+  // keyboard 1–6 shortcuts (accessibility). Only after the tour (during the tour
+  // the student uses the ray/click so the TutorialSystem can track the step), and
+  // only for a currently-usable card (a hidden or tour-locked card has no
+  // RayInteractable, so it is quietly ignored).
+  pressControl(action: number): void {
+    if (!this.globals.tourDone) return;
+    for (const card of this.queries.allCards.entities) {
+      if ((card.getValue(ControlCard, "action") ?? -1) !== action) continue;
+      if (!card.hasComponent(RayInteractable)) return; // hidden or locked — ignore
+      this.onCardPressed(card);
+      return;
+    }
+  }
+
   private onCardPressed(entity: ReturnType<World["createTransformEntity"]>): void {
     Sfx.clunk(); // a soft woody click whenever a control is used
     this.idleTime = 0; // the student just acted — reset the idle-nudge clock
@@ -2210,6 +2226,7 @@ export class ProductionSystem extends createSystem({
   // top edge with an up-and-outward velocity and one of the dashboard's meter
   // colors. advanceConfetti rains them down and fades them; then it all goes.
   private spawnConfetti(): void {
+    if (prefersReducedMotion()) return; // no confetti burst for reduced-motion viewers
     const C = CONSTANTS.celebration;
     const R = CONSTANTS.report;
     const positions = new Float32Array(C.count * 3);

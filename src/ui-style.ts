@@ -40,6 +40,17 @@ export const METER_STYLE: Record<string, MeterStyle> = {
   Profit: { icon: "💰", bar: "#7b61c8", text: "#5a3fa0" }, // purple — coins you KEEP from each sale
 };
 
+// Does the player ask for reduced motion (an OS/browser accessibility setting)?
+// When true, we skip the big optional animations — confetti, the drifting dust,
+// and the value "pop" — that can bother a motion-sensitive viewer.
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
 // meterIcon(label, fill): the icon for a meter row — usually the fixed
 // METER_STYLE icon, but the Worker Satisfaction face is DYNAMIC: it swaps
 // 🙂 → 😐 → 😟 by band, so the crew's mood reads at a glance. Both the in-world

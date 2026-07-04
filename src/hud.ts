@@ -16,7 +16,7 @@
 // match exactly.
 // =============================================================================
 
-import { UI, METER_STYLE, METER_ORDER, STATUS_TONE, meterIcon } from "./ui-style.js";
+import { UI, METER_STYLE, METER_ORDER, STATUS_TONE, meterIcon, prefersReducedMotion } from "./ui-style.js";
 
 // One meter's live data, as the readout board stores it (label + display value
 // + how full the bar is, 0..1). The HUD just mirrors these.
@@ -167,6 +167,7 @@ export function updateFactoryHud(meters: Meter[]): void {
 
 // A quick scale "pop" so a changed number catches the eye, then settles back.
 function bumpValue(el: HTMLElement): void {
+  if (prefersReducedMotion()) return; // honor the reduced-motion setting
   el.style.transform = "scale(1.35)";
   setTimeout(() => {
     el.style.transform = "scale(1)";

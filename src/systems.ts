@@ -37,6 +37,7 @@ import {
 import type {
   FactoryType,
 } from "./config.js";
+import { prefersReducedMotion } from "./ui-style.js";
 import {
   buildGoalCard,
   titleCase,
@@ -101,6 +102,7 @@ export class DustSystem extends createSystem({
   private ceilingLevel = ROOM.height - 0.4;
 
   update(delta: number): void {
+    if (prefersReducedMotion()) return; // hold the dust still for reduced-motion viewers
     for (const entity of this.queries.dust.entities) {
       const points = entity.object3D as Points;
 

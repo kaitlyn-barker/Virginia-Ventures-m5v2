@@ -437,8 +437,9 @@ export function makeControlCard(opts: {
   width: number;
   height: number;
   primary?: boolean;
+  digit?: number; // the keyboard number (1–6) shown in the card's corner
 }): Mesh {
-  const { text, icon, width, height, primary = false } = opts;
+  const { text, icon, width, height, primary = false, digit } = opts;
   const pxPerMeter = 1024;
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(width * pxPerMeter);
@@ -490,6 +491,23 @@ export function makeControlCard(opts: {
     const lineH = size * 1.25;
     const top = H / 2 - ((lines.length - 1) * lineH) / 2;
     lines.forEach((ln, i) => ctx.fillText(ln, textCx, top + i * lineH));
+
+    // A small numbered badge in the top-left corner — the keyboard key (1–6) that
+    // also triggers this control, for students who struggle with a mouse/ray.
+    if (digit) {
+      const bR = Math.round(H * 0.15);
+      const bx = M + bR + Math.round(W * 0.03);
+      const by = M + bR + Math.round(H * 0.05);
+      ctx.beginPath();
+      ctx.arc(bx, by, bR, 0, Math.PI * 2);
+      ctx.fillStyle = primary ? UI.white : UI.navy;
+      ctx.fill();
+      ctx.fillStyle = primary ? UI.gold : UI.cream;
+      ctx.font = `bold ${Math.round(bR * 1.2)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(digit), bx, by);
+    }
   };
 
   paint(text);
@@ -548,6 +566,7 @@ export function buildControlStation(): { desk: Group; cards: Mesh[] } {
       width: C.cardWidth,
       height: C.cardHeight,
       primary: i === CONTROL.start,
+      digit: i + 1, // cards are built in CONTROL order, so key N triggers card N-1
     });
     // Center the whole row on the desk: i spreads evenly around x = 0.
     card.position.set(
