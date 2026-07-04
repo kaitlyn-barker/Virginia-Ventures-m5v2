@@ -564,8 +564,9 @@ export const CONSTANTS = {
   // --- The foreman: a stationary figure beside the desk who delivers news ----
   // Built simply like the workers, in a brown coat + hat so he reads as the boss.
   // He stands just past the right end of the control desk and shares news through
-  // a small speech panel above him. Step up to him (within `range`) or click his
-  // "Next" prompt card to hear the next beat. His first beat: demand is rising.
+  // a small speech panel above him. The student clicks his "Next" prompt card to
+  // hear each beat, one at a time; the prompt pulses + chimes whenever a NEW note
+  // is waiting to be read. His first beat: demand is rising.
   foreman: {
     // Moved out from beside the desk to a spot clearly IN the player's forward
     // view (he used to sit ~60° off to the right, easy to miss). He now stands a
@@ -573,7 +574,6 @@ export const CONSTANTS = {
     // as overseeing the line and is always in sight.
     x: 1.3, // world X: to the right, but comfortably inside the (narrower browser) view cone
     z: -4.0, // world Z: a few meters ahead, beyond the desk (open floor)
-    range: 2.2, // step within this many meters of him to hear the next news beat — generous enough that landing on his gold floor ring (see spotOffset) counts
     coatColor: 0x6e4a2b, // warm brown coat (the desk-oak tone — clearly the boss, not a worker)
     hatColor: 0x2e1f14, // dark brown hat
     hatBrimRadius: 0.2, // wide brim of the foreman's hat
@@ -590,6 +590,10 @@ export const CONSTANTS = {
     promptX: 1.3, // world X of the prompt card (lined up with the foreman)
     promptY: 1.3, // chest height, easy to click
     promptZ: -3.3, // a little toward the player from the foreman (foreman.z + 0.7), so it is clickable
+    // When a NEW note is waiting, the prompt breathes to catch the eye and a bell
+    // chimes once (see ForemanSystem). It goes quiet once every note is read.
+    noticePulseDepth: 0.07, // how much the prompt grows/shrinks while a new note waits (±7%)
+    noticePulseRate: 3.2, // breathing speed (radians/sec) — quicker than the calm control-guidance pulse, so it reads as "attention"
 
     // The glowing "stand here" ring on the floor beside him — a clear landing
     // target for the hop (teleport), so finding him is never a puzzle. It sits
@@ -597,7 +601,7 @@ export const CONSTANTS = {
     // edge) because at standing eye height the desk hides everything nearer:
     // the sight line from spawn only clears the desk's right edge (x 1.95)
     // for floor spots at roughly x 3 or beyond. Standing on it also gives a
-    // clear view OF him, and it stays inside his (widened) news `range`.
+    // clear view OF him and his pulsing prompt.
     spotRadius: 0.55, // ring radius on the floor (meters)
     spotOffset: [1.9, 0.4] as [number, number], // where the ring sits, relative to his feet (local X toward his right, local Z toward the player)
     spotColor: 0xf6b73c, // warm gold — the same "this is your next step" color as his button

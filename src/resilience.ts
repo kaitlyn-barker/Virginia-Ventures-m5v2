@@ -156,7 +156,7 @@ function showReloadCard(): void {
 
   const body = document.createElement("div");
   body.textContent =
-    "The screen took a little break. Click the button to load it back up — your class code stays the same.";
+    "The screen took a little break. Click the button to load the factory back up.";
   body.style.color = UI.navy;
   body.style.fontSize = "14px";
   body.style.lineHeight = "1.4";

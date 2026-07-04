@@ -1073,7 +1073,7 @@ export function buildReportBoard(
   margin: number, // final profit SHARE (0..1) — used to GRADE the Profit score
   profitCoins: number, // final Profit in coins — what the Profit row DISPLAYS
   factory: FactoryType | null, // the chosen business (fills in "{product}")
-  recapLines: string[] = [], // plain recap lines (orders / predictions / safety / class code) — NOT graded
+  recapLines: string[] = [], // plain recap lines (orders / predictions / safety) — NOT graded
 ): Mesh {
   const C = CONSTANTS;
   const R = C.report;
@@ -1260,7 +1260,7 @@ export function buildReportBoard(
     const baseSize = Math.round(recapLineH * 0.52);
     const maxW = cardW * 0.92;
     recapLines.forEach((line, i) => {
-      // Shrink each line to fit the card width (the class code can be long).
+      // Shrink each line to fit the card width.
       const size = fitFontSize(ctx, line, maxW, baseSize, "bold");
       ctx.font = `bold ${size}px sans-serif`;
       ctx.fillText(line, W / 2, blocksBottom + recapLineH * (i + 0.5));

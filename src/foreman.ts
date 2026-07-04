@@ -16,7 +16,6 @@ import {
   PlaneGeometry,
   Pressed,
   RayInteractable,
-  Vector3,
   World,
   createSystem,
 } from "@iwsdk/core";
@@ -239,16 +238,17 @@ export function placeForeman(world: World): void {
 export class ForemanSystem extends createSystem({
   foremen: { required: [Foreman] }, // the foreman figure (appears after a pick)
   prompts: { required: [ForemanPrompt, Pressed] }, // his "Next" card was clicked
+  promptCards: { required: [ForemanPrompt] }, // his "Next" card (to pulse when a new note waits)
 }) {
   private newsIndex = -1; // which beat is showing (-1 = none yet)
   private revealed = false; // has the panel been shown at least once?
   private fadeElapsed = 0; // seconds into the panel's first fade-in
-  private armed = true; // ready to deliver one beat on the next real approach
-  private viewer!: Vector3; // scratch vector for the viewer's world position
+  private noticeActive = false; // is a NEW note waiting to be read (prompt pulsing)?
+  private noticeClock = 0; // animation clock for the notice pulse
 
   init(): void {
-    this.viewer = new Vector3();
-    // Clicking his "Next" card advances the news, same as stepping up to him.
+    // Clicking his "Next" card is now the ONLY way to advance the news, so the
+    // student reads every beat deliberately — one click per note.
     this.queries.prompts.subscribe("qualify", () => this.advanceNews());
   }
 
@@ -259,30 +259,13 @@ export class ForemanSystem extends createSystem({
     this.newsIndex = -1;
     this.revealed = false;
     this.fadeElapsed = 0;
-    this.armed = true;
+    this.noticeActive = false;
+    this.noticeClock = 0;
   }
 
   update(delta: number): void {
     const foreman = this.firstForeman();
     if (!foreman) return; // not placed yet (still in the Setup phase)
-
-    // "Step up to him": when the viewer crosses into range, advance the news. We
-    // only fire on the far→near crossing, so one approach shows one new beat.
-    this.world.camera.getWorldPosition(this.viewer);
-    const dx = this.viewer.x - CONSTANTS.foreman.x;
-    const dz = this.viewer.z - CONSTANTS.foreman.z;
-    const range = CONSTANTS.foreman.range;
-    // Two distances, like a thermostat: he fires when you come within "enter,"
-    // then will not fire again until you have stepped past the farther "exit"
-    // distance and come back. This stops pacing in and out from skipping his news.
-    const distSq = dx * dx + dz * dz;
-    const enter = range * range;
-    const exit = (range * 1.6) * (range * 1.6); // must get this far away to re-arm
-    if (!this.armed && distSq > exit) this.armed = true;
-    if (this.armed && distSq <= enter) {
-      this.armed = false;
-      this.advanceNews();
-    }
 
     // Fade the panel in the first time it is shown.
     if (this.revealed && this.fadeElapsed < CONSTANTS.foreman.panelFadeSeconds) {
@@ -294,6 +277,12 @@ export class ForemanSystem extends createSystem({
       const panel = foreman.object3D?.userData.panel as Mesh | undefined;
       if (panel) (panel.material as MeshBasicMaterial).opacity = opacity;
     }
+
+    // The "new message" notice: gently pulse his "Next" prompt (and chime once)
+    // whenever a fresh note is waiting, so the student knows to go read it — he
+    // stands off to the side and is easy to forget. It goes quiet once every
+    // available note has been read.
+    this.updateNotice(delta);
   }
 
   // Show the next news beat (clamped at the last one), filling in the business's
@@ -371,6 +360,72 @@ export class ForemanSystem extends createSystem({
       setFactoryHudStatus("Competition!", "alert");
     } else {
       setFactoryHudStatus("Demand Rising", "active");
+    }
+  }
+
+  // Is there genuinely a NEW beat the student could advance to right now? False if
+  // he is already on his last beat, if the tour has not finished, or if the next
+  // beat is a phase gate still waiting on more production runs (mirrors the gates
+  // in advanceNews, so the notice only lights when a click would truly reveal news).
+  private hasNewMessage(): boolean {
+    if (!this.globals.tourDone) return false;
+    const nextIndex = Math.min(this.newsIndex + 1, FOREMAN_NEWS.length - 1);
+    if (nextIndex === this.newsIndex) return false; // already at the last beat
+    const runs = (this.globals.runsCompleted as number) ?? 0;
+    if (
+      this.newsIndex < COMPETITION_BEAT &&
+      nextIndex >= COMPETITION_BEAT &&
+      runs < runsBeforeCompetition()
+    ) {
+      return false; // the competitor is gated until the student has scaled up
+    }
+    if (
+      this.newsIndex < CLOSING_BEAT &&
+      nextIndex >= CLOSING_BEAT &&
+      runs < runsBeforeClosing()
+    ) {
+      return false; // the closing whistle is gated until Phase 3 is worked through
+    }
+    return true;
+  }
+
+  // Drive the "new note waiting" notice on his prompt: chime once when a fresh note
+  // becomes available, breathe the prompt while it waits, and swap its label so the
+  // call to action is unmistakable. Reset to a calm, still prompt when nothing's new.
+  private updateNotice(delta: number): void {
+    const available = this.hasNewMessage();
+    if (available && !this.noticeActive) {
+      this.noticeActive = true;
+      this.noticeClock = 0;
+      Sfx.bell(); // "ding — the foreman has news"
+      this.setPromptLabel(true);
+    } else if (!available && this.noticeActive) {
+      this.noticeActive = false;
+      this.setPromptLabel(false);
+    }
+    if (this.noticeActive) this.noticeClock += delta;
+
+    const C = CONSTANTS.foreman;
+    for (const prompt of this.queries.promptCards.entities) {
+      const obj = prompt.object3D;
+      if (!obj) continue;
+      obj.scale.setScalar(
+        this.noticeActive && obj.visible
+          ? 1 + C.noticePulseDepth * Math.sin(this.noticeClock * C.noticePulseRate)
+          : 1,
+      );
+    }
+  }
+
+  // Swap the prompt's words: a bright "New note ▸" when one is ready, a calm
+  // "Foreman" when he has nothing new. (The 🗣️ icon set when the prompt was built
+  // rides along on every relabel.)
+  private setPromptLabel(active: boolean): void {
+    for (const prompt of this.queries.promptCards.entities) {
+      const setText = prompt.object3D?.userData.setText as
+        | ((t: string) => void)
+        | undefined;
+      setText?.(active ? "New note ▸" : "Foreman");
     }
   }
 

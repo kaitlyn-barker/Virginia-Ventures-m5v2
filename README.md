@@ -62,38 +62,7 @@ Deploys to GitHub Pages automatically via `.github/workflows/deploy.yml` on push
      day ends.
 5. **End of Day report.** Three scored bands — Production, Worker Satisfaction,
    Profit — plus a short history wrap-up tying the day back to real Virginia
-   industry, a recap of orders/predictions/safety, and a **class code**.
-
----
-
-## Class code (teacher output for the debrief)
-
-Every End of Day report shows a short **class code** encoding the run's key
-results, so a teacher can collect outcomes on paper or in an LMS with **zero
-backend**. In the browser view, a "Teacher Report" card (top-right) shows the
-code and a **Copy my report** button that puts the full plain-text recap on the
-clipboard.
-
-Format (dash-separated segments):
-
-```
-IRN-O194-S47-P164-W3-F2-G2-EXP-CBRK-KGRD
-```
-
-| Segment | Meaning |
-| --- | --- |
-| `TEX` / `IRN` / `LUM` | business: Textile / Ironworks / Lumber |
-| `O###` | Production Output |
-| `S##` | Worker Satisfaction (%) |
-| `P###` | Coins balance at the end (money) |
-| `W#` | workers hired |
-| `F#` | orders filled |
-| `G#` | predictions guessed right |
-| `EXP` | present only if the line was expanded |
-| `C___` | challenge faced: `CBRK` breakdown · `CDLY` delay · `CWLK` walkout · `CPRC` price war · `CNON` none |
-| `K___` | worker-safety choice: `KGRD` added guards · `KPSH` pushed on (omitted if the event never fired) |
-
-The code is defined in `ProductionSystem.buildClassCode()` (`src/production.ts`).
+   industry, and a recap of orders/predictions/safety.
 
 ---
 
@@ -180,8 +149,8 @@ Combine them, e.g. `…/?fast=1&challenge=walkout`.
 
 1. **Full mouse playthrough:** tour → a few runs → hire ×2 → order materials →
    expand → force each challenge via `?challenge=` → reach the End of Day report →
-   check the report bands match the final board numbers and the class code decodes
-   → **Play Again** → pick a *different* factory and confirm a clean second run.
+   check the report bands match the final board numbers → **Play Again** → pick a
+   *different* factory and confirm a clean second run.
 2. **Touch** (Chrome device mode) and the **WebXR emulator:** confirm board
    legibility, the touch joystick + drag-look, teleport/snap-turn, and that the
    DOM HUD is absent in-headset (the in-world board carries everything).
