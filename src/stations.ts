@@ -909,10 +909,16 @@ export function buildOrderBoard(): Mesh {
     }
 
     const shown = orders.slice(0, O.maxVisible);
-    const blockH = (areaBottom - areaTop) / shown.length;
+    // Size each row for a FULL board (maxVisible rows), NOT the current count —
+    // otherwise a single order stretches to fill the whole card, its fonts scale
+    // up with it, and the buyer line overruns the reward (e.g. "The gene$10s").
+    // Then center the stack vertically so a short list still sits nicely.
+    const blockH = (areaBottom - areaTop) / O.maxVisible;
+    const stackTop =
+      areaTop + ((areaBottom - areaTop) - blockH * shown.length) / 2;
 
     shown.forEach((order, i) => {
-      const top = areaTop + i * blockH;
+      const top = stackTop + i * blockH;
       const statusColor =
         order.status === "filled"
           ? new Color(O.filledColor).getStyle()
