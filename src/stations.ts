@@ -25,6 +25,7 @@ import {
 import {
   METER_STYLE,
   UI,
+  meterIcon,
 } from "./ui-style.js";
 import {
   ControlCard,
@@ -357,7 +358,11 @@ export function drawWrapped(
 // so the card always reads the same way.
 // =============================================================================
 export function speedCardText(label: string): string {
-  return `Machine Speed\n‹ ${label} ›`;
+  // Show the plain-language tradeoff for the current pace right on the card, so
+  // the speed/wear/crew choice is legible without having to discover it.
+  const speed = CONSTANTS.speeds.find((s) => s.label === label);
+  const blurb = speed?.blurb ? `\n${speed.blurb}` : "";
+  return `Machine Speed\n‹ ${label} ›${blurb}`;
 }
 
 // =============================================================================
@@ -651,7 +656,8 @@ export function buildReadoutBoard(): Mesh {
       ctx.font = `700 ${numFont}px sans-serif`;
       ctx.textAlign = "left";
       ctx.fillStyle = UI.navy;
-      ctx.fillText(`${style.icon} ${meter.label}`, contentX, labelY);
+      // Worker Satisfaction's face swaps 🙂/😐/😟 by band (meterIcon).
+      ctx.fillText(`${meterIcon(meter.label, meter.fill)} ${meter.label}`, contentX, labelY);
 
       // The number on the right, in the meter's own color. A fading gold pill
       // sits behind it the instant it changes, so the eye catches the update.

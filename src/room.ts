@@ -721,6 +721,8 @@ export function buildProductionLine(): Group {
   // Expansion-annex pieces get added here if the line is expanded (starts empty).
   // Both lists let "Play Again" strip the runtime additions back off the line.
   line.userData.annexParts = [];
+  // Finished-goods cubes stacked in the output crate each run (Phase 3.2 juice).
+  line.userData.pile = [];
 
   return line;
 }

@@ -170,6 +170,7 @@ export class ProductionSystem extends createSystem({
   private taughtWorkerSafety = false; // has the worker-safety note been shown once?
   private taughtRailroad = false; // has the "ships out by rail to Norfolk" note been shown?
   private shipElapsed = -1; // >=0 while a sold crate slides to the rail car (-1 = idle)
+  private workerClock = 0; // animation clock for the workers' idle bob (Phase 3.2 juice)
 
   // --- Machine wear (pushing Fast piles it on; a breakdown grows likely) ---
   private machineWear = 0; // extra breakdown chance built up from the pace
@@ -369,9 +370,11 @@ export class ProductionSystem extends createSystem({
       if (!group) continue;
       const workers = (group.userData.workers as Object3D[]) ?? [];
       const annex = (group.userData.annexParts as Object3D[]) ?? [];
-      for (const part of [...workers, ...annex]) this.disposeObject3D(part);
+      const pile = (group.userData.pile as Object3D[]) ?? [];
+      for (const part of [...workers, ...annex, ...pile]) this.disposeObject3D(part);
       workers.length = 0;
       annex.length = 0;
+      pile.length = 0;
       const product = group.userData.product as Mesh | undefined;
       if (product) {
         product.visible = false;
@@ -567,6 +570,7 @@ export class ProductionSystem extends createSystem({
     if (this.repairing) this.advanceRepair(delta);
     if (this.shipmentPending) this.advanceShipment(delta);
     if (this.shipElapsed >= 0) this.advanceShip(delta);
+    this.updateWorkers(delta); // idle bob + tired droop (Phase 3.2 juice)
     if (this.machineDown || this.repairing) this.animateSmoke(delta);
     this.advanceBoard(delta);
     this.advanceNote(delta);
@@ -927,6 +931,7 @@ export class ProductionSystem extends createSystem({
     Sfx.stopHum(); // the line stops — fade the machine drone out
     Sfx.coin(); // a batch was made and sold — a bright "ka-ching"
     this.startShip(); // send a crate sliding out to the rail car (the goods ship by rail)
+    this.addToPile(); // stack a finished-goods cube in the output crate (Phase 3.2 juice)
 
     // Tuck the good away until the next run (and turn its glow back off).
     for (const line of this.queries.lines.entities) {
@@ -1276,6 +1281,63 @@ export class ProductionSystem extends createSystem({
         t > 0.66 ? Math.max(0, 1 - (t - 0.66) / 0.34) : 1;
     }
     if (done) this.shipElapsed = -1;
+  }
+
+  // --- Feedback juice (Phase 3.2) --------------------------------------------
+  // Give the workers a subtle idle bob (livelier while a batch runs) and a weary
+  // forward slump + shrink when the crew is worn down. Writes only into each
+  // figure's transform — no allocation, the DustSystem pattern.
+  private updateWorkers(delta: number): void {
+    const J = CONSTANTS.juice;
+    this.workerClock += delta;
+    const tired = this.satisfactionValue < CONSTANTS.tiredThreshold;
+    const amp = this.running ? J.bobRun : J.bobIdle;
+    const ease = Math.min(1, delta * 4);
+    const targetTilt = tired ? J.droopTilt : 0;
+    const targetScale = tired ? J.droopScale : 1;
+    for (const line of this.queries.lines.entities) {
+      const workers = (line.object3D?.userData.workers as Group[]) ?? [];
+      for (let i = 0; i < workers.length; i++) {
+        const w = workers[i];
+        // Bob straight up (abs sine keeps their feet from dipping below the floor).
+        w.position.y = Math.abs(Math.sin(this.workerClock * J.bobSpeed + i * 1.3)) * amp;
+        w.rotation.x += (targetTilt - w.rotation.x) * ease; // ease into / out of the slump
+        const s = w.scale.x + (targetScale - w.scale.x) * ease;
+        w.scale.setScalar(s);
+      }
+    }
+  }
+
+  // Stack a finished-goods cube in the output crate each run, so output growth is
+  // visible in the WORLD, not only a number. When the crate fills to the cap, it
+  // "ships out" — the small cubes clear and the pile starts fresh.
+  private addToPile(): void {
+    const J = CONSTANTS.juice;
+    const factory = this.globals.activeFactory as FactoryType | null;
+    const color = factory ? factory.color : CONSTANTS.rawMaterialColor;
+    for (const line of this.queries.lines.entities) {
+      const group = line.object3D;
+      if (!group) continue;
+      const pile = (group.userData.pile as Object3D[]) ?? [];
+      if (pile.length >= J.pileCap) {
+        for (const c of pile) this.disposeObject3D(c); // the full crate ships out
+        pile.length = 0;
+      }
+      const idx = pile.length;
+      const cube = makeBox(
+        J.pileCubeSize,
+        J.pileCubeSize,
+        J.pileCubeSize,
+        color,
+        [
+          CONSTANTS.outputX + (idx % 2 === 0 ? -0.16 : 0.16), // two columns
+          0.5 + Math.floor(idx / 2) * (J.pileCubeSize + 0.02), // stacked at the crate rim, up
+          0,
+        ],
+      );
+      group.add(cube);
+      pile.push(cube);
+    }
   }
 
   // --- Worker-safety event ---------------------------------------------------

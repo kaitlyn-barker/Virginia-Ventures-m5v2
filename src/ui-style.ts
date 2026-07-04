@@ -40,6 +40,17 @@ export const METER_STYLE: Record<string, MeterStyle> = {
   Profit: { icon: "💰", bar: "#7b61c8", text: "#5a3fa0" }, // purple — coins you KEEP from each sale
 };
 
+// meterIcon(label, fill): the icon for a meter row — usually the fixed
+// METER_STYLE icon, but the Worker Satisfaction face is DYNAMIC: it swaps
+// 🙂 → 😐 → 😟 by band, so the crew's mood reads at a glance. Both the in-world
+// board and the corner HUD use this so they always agree.
+export function meterIcon(label: string, fill: number): string {
+  if (label === "Worker Satisfaction") {
+    return fill >= 0.6 ? "🙂" : fill >= 0.35 ? "😐" : "😟";
+  }
+  return METER_STYLE[label]?.icon ?? "•";
+}
+
 // The order the six meters appear, top to bottom (matches CONSTANTS.readouts).
 export const METER_ORDER = [
   "Coins",

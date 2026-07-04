@@ -16,7 +16,7 @@
 // match exactly.
 // =============================================================================
 
-import { UI, METER_STYLE, METER_ORDER, STATUS_TONE } from "./ui-style.js";
+import { UI, METER_STYLE, METER_ORDER, STATUS_TONE, meterIcon } from "./ui-style.js";
 
 // One meter's live data, as the readout board stores it (label + display value
 // + how full the bar is, 0..1). The HUD just mirrors these.
@@ -25,7 +25,7 @@ type Meter = { label: string; value: string; fill: number };
 // The live elements we update after the first build (kept by meter label).
 let hudEl: HTMLElement | null = null;
 let statusChip: HTMLElement | null = null;
-const rowRefs: Record<string, { value: HTMLElement; fill: HTMLElement }> = {};
+const rowRefs: Record<string, { value: HTMLElement; fill: HTMLElement; labelEl: HTMLElement }> = {};
 
 // makeRow(label): build ONE meter row — "📦 Production Output [▓▓▓░░] 120".
 // The label + icon sit on the left, a rounded track + colored fill in the
@@ -35,6 +35,7 @@ function makeRow(label: string): {
   row: HTMLElement;
   value: HTMLElement;
   fill: HTMLElement;
+  labelEl: HTMLElement;
 } {
   const style = METER_STYLE[label] ?? { icon: "•", bar: UI.gold, text: UI.goldText };
 
@@ -78,7 +79,7 @@ function makeRow(label: string): {
   row.appendChild(labelEl);
   row.appendChild(track);
   row.appendChild(value);
-  return { row, value, fill };
+  return { row, value, fill, labelEl };
 }
 
 // createFactoryHud(seed, status): build the dashboard once and drop it into the
@@ -135,7 +136,7 @@ export function createFactoryHud(seed: Meter[], status: string): void {
   // One row per meter, in the canonical order.
   for (const label of METER_ORDER) {
     const r = makeRow(label);
-    rowRefs[label] = { value: r.value, fill: r.fill };
+    rowRefs[label] = { value: r.value, fill: r.fill, labelEl: r.labelEl };
     hud.appendChild(r.row);
   }
 
@@ -158,6 +159,9 @@ export function updateFactoryHud(meters: Meter[]): void {
       bumpValue(ref.value); // a small pop when a score changes
     }
     ref.fill.style.width = Math.max(0, Math.min(1, meter.fill)) * 100 + "%";
+    // Keep the row's icon current (the Worker Satisfaction face swaps by band).
+    const iconLabel = `${meterIcon(meter.label, meter.fill)} ${meter.label}`;
+    if (ref.labelEl.textContent !== iconLabel) ref.labelEl.textContent = iconLabel;
   }
 }
 

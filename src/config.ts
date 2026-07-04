@@ -185,6 +185,21 @@ export const CONSTANTS = {
     rise: 0.55, // how high it arcs on the way (meters)
   },
 
+  // --- Feedback juice (cheap, kid-legible life on the floor — Phase 3.2) ------
+  // Tiny animations that make the factory feel alive: workers bob as they work
+  // and slump when the crew is worn down, and finished goods stack up in the
+  // output crate so growth is visible in the world, not just a number. All
+  // rotate/scale/position tweens — no rigs, no new draw calls of note.
+  juice: {
+    bobIdle: 0.015, // how high a worker bobs when the line is idle (meters)
+    bobRun: 0.045, // ...and while a batch is running (a livelier bob)
+    bobSpeed: 3.2, // how fast the bob cycles
+    droopTilt: 0.35, // radians a tired worker tilts forward (a weary slump)
+    droopScale: 0.92, // a tired worker shrinks a touch
+    pileCap: 6, // finished-goods cubes stacked before the pile "ships" and resets
+    pileCubeSize: 0.24, // each stacked cube's size (meters)
+  },
+
   // --- Foreman's control station (a desk + FOUR clickable control cards) ---
   deskWoodColor: 0x6e4a2b, // sturdy warm oak for the desk
   deskZ: -2.1, // how far in front of the player the desk sits (meters, toward -Z). Pulled back from -1.5 so the control cards aren't crammed at the bottom of the view — they sit comfortably in front without the player having to step back to use them.
@@ -344,9 +359,9 @@ export const CONSTANTS = {
   //   wearAdd           — how much this pace wears the MACHINE each run: Fast piles
   //                       on wear (a breakdown grows likely), Slow lets it recover (−)
   speeds: [
-    { label: "Slow", multiplier: 1, runSeconds: 4.0, beltSpeed: 0.9, marginBonus: -0.05, satisfactionDrift: 0.06, strainsCrew: false, wearAdd: -0.04 },
-    { label: "Medium", multiplier: 2, runSeconds: 3.0, beltSpeed: 1.7, marginBonus: 0.0, satisfactionDrift: 0.03, strainsCrew: false, wearAdd: 0.03 },
-    { label: "Fast", multiplier: 3, runSeconds: 2.0, beltSpeed: 2.8, marginBonus: 0.06, satisfactionDrift: -0.06, strainsCrew: true, wearAdd: 0.12 },
+    { label: "Slow", multiplier: 1, runSeconds: 4.0, beltSpeed: 0.9, marginBonus: -0.05, satisfactionDrift: 0.06, strainsCrew: false, wearAdd: -0.04, blurb: "1× — kind to the crew & machine" },
+    { label: "Medium", multiplier: 2, runSeconds: 3.0, beltSpeed: 1.7, marginBonus: 0.0, satisfactionDrift: 0.03, strainsCrew: false, wearAdd: 0.03, blurb: "2× — a balanced pace" },
+    { label: "Fast", multiplier: 3, runSeconds: 2.0, beltSpeed: 2.8, marginBonus: 0.06, satisfactionDrift: -0.06, strainsCrew: true, wearAdd: 0.12, blurb: "3× — but tires the crew & wears the machine" },
   ] as SpeedSetting[],
   defaultSpeedIndex: 0, // start on "Slow" so speeding up feels like a real choice
 
@@ -713,6 +728,7 @@ export type SpeedSetting = {
   satisfactionDrift: number; // how Worker Satisfaction drifts each run at this pace
   strainsCrew: boolean; // hardest pace? running it repeatedly wears the crew down
   wearAdd: number; // how much this pace wears the machine each run (− lets it recover)
+  blurb: string; // the plain-language tradeoff shown on the Machine Speed card
 };
 
 // =============================================================================
