@@ -34,6 +34,7 @@ import {
   FLOOR_MARGIN,
 } from "./environment.js";
 import { setupBrowserControls } from "./controls.js";
+import { installResilience } from "./resilience.js";
 
 // -----------------------------------------------------------------------------
 // CONSTANTS — the few tunable numbers that belong to world setup.
@@ -156,4 +157,13 @@ World.create(document.getElementById("scene-container") as HTMLDivElement, {
   // yourself" for first-person browser views, which is what it does.
   // ---------------------------------------------------------------------------
   setupBrowserControls(world);
+
+  // ---------------------------------------------------------------------------
+  // RESILIENCE — the safety nets for a school device having a bad moment. Wired
+  // up LAST, so the system error boundary can wrap every system that's now been
+  // registered (in buildEnvironment). See resilience.ts:
+  //   • one crashing system is skipped for a frame instead of freezing the game
+  //   • a lost 3D canvas shows a friendly "click to restart" card, not a freeze
+  // ---------------------------------------------------------------------------
+  installResilience(world);
 });
