@@ -24,6 +24,7 @@
 import { World, VisibilityState } from "@iwsdk/core";
 import { UI } from "./ui-style.js";
 import { resetGame } from "./reset.js";
+import { Sfx } from "./sfx.js";
 
 // -----------------------------------------------------------------------------
 // CONSTANTS — the feel of the flat-screen controls. (World-setup-style tunables,
@@ -209,12 +210,61 @@ export function setupBrowserControls(world: World): void {
   // ---------------------------------------------------------------------------
   showControlsHint(coarsePointer);
 
+  // The mute toggle (speaker button + "M" key).
+  setupMuteControl();
+
   // Tuck the touch overlays away if the player enters the headset (belt-and-
   // suspenders — the DOM isn't drawn in XR anyway) and restore them on the way
   // back to the browser view.
   world.visibilityState.subscribe((state) => {
     updateJoystick();
     if (state !== VisibilityState.NonImmersive) dismissHint();
+  });
+}
+
+// -----------------------------------------------------------------------------
+// setupMuteControl — a small speaker button in the bottom-right corner that
+// toggles all sound, mirrored by the "M" key. The preference is remembered in
+// localStorage by the sound module, so it sticks across a refresh / next class.
+// -----------------------------------------------------------------------------
+function setupMuteControl(): void {
+  if (typeof document === "undefined") return;
+
+  const button = document.createElement("button");
+  button.id = "mute-toggle";
+  button.style.position = "fixed";
+  button.style.right = "16px";
+  button.style.bottom = "16px";
+  button.style.zIndex = "1000";
+  button.style.width = "44px";
+  button.style.height = "44px";
+  button.style.borderRadius = "50%";
+  button.style.border = `2px solid ${UI.navy}`;
+  button.style.background = UI.creamHud;
+  button.style.boxShadow = `0 4px 14px ${UI.shadow}`;
+  button.style.fontSize = "20px";
+  button.style.lineHeight = "1";
+  button.style.cursor = "pointer";
+
+  const render = (): void => {
+    const off = Sfx.isMuted();
+    button.textContent = off ? "🔇" : "🔊";
+    button.title = off ? "Sound off — click or press M" : "Sound on — click or press M";
+    button.setAttribute("aria-label", off ? "Unmute sound" : "Mute sound");
+  };
+  render();
+
+  button.addEventListener("click", () => {
+    Sfx.toggleMuted();
+    render();
+  });
+  document.body.appendChild(button);
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "m" || event.key === "M") {
+      Sfx.toggleMuted();
+      render();
+    }
   });
 }
 

@@ -1123,6 +1123,7 @@ export class ProductionSystem extends createSystem({
     const C = CONSTANTS;
     this.running = false;
     this.brokeDown = false;
+    Sfx.uhoh(); // a soft "uh-oh" — this run broke down
     this.setGauge(C.windowColor, 0.9); // warning lights back to the normal warm glow
     this.machineWear = 0; // the repair clears the wear
 
@@ -1286,6 +1287,7 @@ export class ProductionSystem extends createSystem({
   // A batch just sold: send a filled crate sliding off the output crate to the
   // rail car. Purely visual — the sale already happened.
   private startShip(): void {
+    Sfx.whoosh(); // a gentle whoosh as the goods head off by rail
     for (const line of this.queries.lines.entities) {
       const crate = line.object3D?.userData.shipCrate as Mesh | undefined;
       if (!crate) continue;
@@ -1392,7 +1394,7 @@ export class ProductionSystem extends createSystem({
     this.taughtWorkerSafety = true; // the event covers the teaching moment too
     this.safetyEventActive = true; // pause the line until a choice is made
     buildSafetyEvent(this.world);
-    Sfx.bell(); // the foreman speaks up (a soft "uh-oh" sfx comes in Phase 3.4)
+    Sfx.uhoh(); // a soft "uh-oh" — a worker got hurt
     this.setNote(CONSTANTS.safetyEvent.question);
   }
 
@@ -1826,6 +1828,7 @@ export class ProductionSystem extends createSystem({
   private strikeBreakdown(): void {
     const comp = CONSTANTS.competition;
     this.machineDown = true;
+    Sfx.uhoh(); // a soft "uh-oh" — the machine broke down
     this.addSmokePuff(); // a little smoke rises from the chimney while it is down
     this.setGauge(comp.warningColor, 1); // amber warning lamp (warm, not an alarming red)
     this.repaintRepairCard();

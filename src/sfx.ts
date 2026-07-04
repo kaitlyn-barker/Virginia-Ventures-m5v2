@@ -91,6 +91,25 @@ const CONSTANTS = {
     hold: 0.08, // each note rings briefly...
     release: 0.5, // ...and the last one rings out a little longer
   },
+
+  // --- A soft "uh-oh" when something goes wrong (a breakdown or a safety event)
+  uhoh: {
+    notes: [370, 294], // two descending tones (F#4 → D4) — a gentle "uh-oh"
+    gap: 0.15, // seconds between the two
+    peak: 0.26, // kept soft — a nudge, not an alarm (kid-friendly)
+    attack: 0.01,
+    hold: 0.08,
+    release: 0.22,
+  },
+
+  // --- A gentle "whoosh" when a crate ships out to the rail car ---------------
+  whoosh: {
+    duration: 0.5, // total length, in seconds
+    peak: 0.2, // soft
+    filterStart: 300, // the bandpass sweeps UP (a departing whoosh), from this Hz...
+    filterEnd: 2400, // ...to this Hz
+    q: 0.8, // how narrow the band is (lower = airier)
+  },
 };
 
 // =============================================================================
@@ -103,6 +122,27 @@ let ctx: AudioContext | null = null; // the audio engine (null until the first s
 let master: GainNode | null = null; // the master volume all sounds pass through
 let humGain: GainNode | null = null; // the on/off fade for the running-machine drone
 let humBuilt = false; // have we built the (always-on, silent-until-started) hum yet?
+
+// --- Mute (a global gain gate, remembered across sessions) -------------------
+const MUTE_KEY = "factory-muted";
+let muted = false; // is all sound silenced?
+let muteLoaded = false; // have we read the saved preference yet?
+
+// Read the saved mute preference once (guarded — school browsers may block it).
+function loadMute(): void {
+  if (muteLoaded) return;
+  muteLoaded = true;
+  try {
+    muted = window.localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+    muted = false;
+  }
+}
+// The master gain to use right now: silent when muted, the set volume otherwise.
+function targetVolume(): number {
+  loadMute();
+  return muted ? 0 : CONSTANTS.masterVolume;
+}
 
 // Wake the audio engine and hand back its pieces, building it on first use. This
 // is safe to call before every sound: resuming an already-running engine does
@@ -122,7 +162,7 @@ function ensure(): { ctx: AudioContext; master: GainNode } | null {
     // Master volume → a soft limiter → the speakers. The limiter keeps things
     // from clipping when, say, a coin and a bell land at the same moment.
     master = ctx.createGain();
-    master.gain.value = CONSTANTS.masterVolume;
+    master.gain.value = targetVolume(); // start muted if that was the saved preference
     const limiter = ctx.createDynamicsCompressor();
     master.connect(limiter).connect(ctx.destination);
   }
@@ -255,6 +295,81 @@ export const Sfx = {
         release: last ? f.release * 1.8 : f.release,
       });
     });
+  },
+
+  // A soft, descending "uh-oh" — played when something goes wrong (a machine
+  // breakdown or the worker-safety event). Kept gentle so it never alarms kids.
+  uhoh(): void {
+    const audio = ensure();
+    if (!audio) return;
+    const u = CONSTANTS.uhoh;
+    const t = audio.ctx.currentTime;
+    u.notes.forEach((freq, i) => {
+      tone(audio, {
+        type: "triangle",
+        freqStart: freq,
+        start: t + i * u.gap, // the two notes fall, one after the other
+        peak: u.peak,
+        attack: u.attack,
+        hold: u.hold,
+        release: u.release,
+      });
+    });
+  },
+
+  // A gentle "whoosh" — played as a crate ships out to the rail car. A short burst
+  // of noise through a bandpass filter that sweeps UP, so it reads as "departing."
+  whoosh(): void {
+    const audio = ensure();
+    if (!audio) return;
+    const w = CONSTANTS.whoosh;
+    const { ctx: c, master: out } = audio;
+    const t = c.currentTime;
+
+    // A brief buffer of white noise (the airy "shhh" of the whoosh).
+    const len = Math.max(1, Math.floor(c.sampleRate * w.duration));
+    const buffer = c.createBuffer(1, len, c.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource();
+    src.buffer = buffer;
+
+    // A bandpass whose center pitch sweeps up = the sound moving away.
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = w.q;
+    bp.frequency.setValueAtTime(w.filterStart, t);
+    bp.frequency.exponentialRampToValueAtTime(w.filterEnd, t + w.duration);
+
+    // A quick swell then a fade.
+    const env = c.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.linearRampToValueAtTime(w.peak, t + w.duration * 0.3);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + w.duration);
+
+    src.connect(bp).connect(env).connect(out);
+    src.start(t);
+    src.stop(t + w.duration + 0.02);
+  },
+
+  // --- Mute (a global gain gate the mute button + "M" key drive) -------------
+  isMuted(): boolean {
+    loadMute();
+    return muted;
+  },
+  setMuted(value: boolean): void {
+    muteLoaded = true;
+    muted = value;
+    try {
+      window.localStorage.setItem(MUTE_KEY, value ? "1" : "0");
+    } catch {
+      /* locked-down browser — the setting just won't persist */
+    }
+    if (master) master.gain.value = targetVolume(); // apply live if the engine is up
+  },
+  toggleMuted(): boolean {
+    this.setMuted(!this.isMuted());
+    return muted;
   },
 
   // Swell the soft machine drone in — call this when a batch STARTS running.
