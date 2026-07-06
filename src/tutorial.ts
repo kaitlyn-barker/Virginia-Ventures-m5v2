@@ -81,6 +81,13 @@ export class TutorialSystem extends createSystem({
   foremanPrompts: { required: [ForemanPrompt] }, // his "Next" news card (hidden during the tour)
 }) {
   private cockpitPlaced = false; // has the desk/board/foreman been revealed yet?
+  // The cockpit is five separate builders. Running them all inside one click
+  // handler stalls that frame long enough (canvas painting + texture uploads)
+  // that a headset compositor visibly drops the scene for a beat. So the click
+  // only QUEUES them; update() runs one builder per frame, then fires the
+  // continuation (the code that needs the finished cockpit).
+  private cockpitQueue: Array<(world: World) => void> = [];
+  private cockpitDone: (() => void) | null = null;
   private tutorialActive = false; // are we stepping through the foreman's lines?
   private stepIndex = 0; // which TOUR_STEPS line is showing
   // Control actions the foreman has UNLOCKED so far (a card is locked — dimmed +
@@ -118,6 +125,8 @@ export class TutorialSystem extends createSystem({
   // this held — so we just drop the stale refs and wind the steps back.
   reset(): void {
     this.cockpitPlaced = false;
+    this.cockpitQueue = [];
+    this.cockpitDone = null;
     this.tutorialActive = false;
     this.stepIndex = 0;
     this.unlockedControls.clear();
@@ -129,6 +138,17 @@ export class TutorialSystem extends createSystem({
   }
 
   update(delta: number): void {
+    // Reveal the cockpit one piece per frame (see placeCockpit), then run the
+    // continuation the moment the last piece is in.
+    if (this.cockpitQueue.length > 0) {
+      this.cockpitQueue.shift()!(this.world);
+      if (this.cockpitQueue.length === 0 && this.cockpitDone) {
+        const done = this.cockpitDone;
+        this.cockpitDone = null;
+        done();
+      }
+    }
+
     // Fade the foreman's speech panel in once, the first time the tour shows a line.
     if (this.panelFading) {
       this.panelFadeElapsed += delta;
@@ -149,6 +169,12 @@ export class TutorialSystem extends createSystem({
 
   // --- Button handling -------------------------------------------------------
   private onButton(action: number): void {
+    // Ignore clicks while the cockpit is still being revealed (one piece per
+    // frame): the goal card's two buttons can be pressed in the SAME frame with
+    // two controllers, and a second hand-off mid-build would tangle the state
+    // (e.g. Skip's endTour firing before a single piece exists, then Start's
+    // pending continuation re-entering the tour after tourDone was set).
+    if (this.cockpitQueue.length > 0 || this.cockpitDone !== null) return;
     Sfx.clunk(); // a soft confirming click (these are not ControlCards, so nothing else hears them)
     if (action === TOUR.start) this.startTour();
     else if (action === TOUR.skip) this.skipTour();
@@ -168,23 +194,23 @@ export class TutorialSystem extends createSystem({
   // news prompt, put up his "Next ▸" + "Skip tour" buttons, and show the first line.
   private startTour(): void {
     this.disposeTourParts(); // sweep the goal card + its buttons away
-    this.placeCockpit();
-    this.hideForemanPrompt(); // he is giving the tour, not the news yet
-    this.buildTutorialButtons();
-    this.tutorialActive = true;
-    this.stepIndex = 0;
-    this.unlockedControls.clear(); // everything starts locked; steps unlock controls one at a time
-    this.panelFading = true;
-    this.panelFadeElapsed = 0;
-    this.showStep(0);
+    this.placeCockpit(() => {
+      this.hideForemanPrompt(); // he is giving the tour, not the news yet
+      this.buildTutorialButtons();
+      this.tutorialActive = true;
+      this.stepIndex = 0;
+      this.unlockedControls.clear(); // everything starts locked; steps unlock controls one at a time
+      this.panelFading = true;
+      this.panelFadeElapsed = 0;
+      this.showStep(0);
+    });
   }
 
   // "Skip tour": from the goal card, reveal the cockpit and start the game right
   // away; mid-tour, just end it. Either way the real game begins.
   private skipTour(): void {
     this.disposeTourParts();
-    if (!this.cockpitPlaced) this.placeCockpit();
-    this.endTour();
+    this.placeCockpit(() => this.endTour());
   }
 
   // The tour is over (last line passed, or skipped): hand off to the real game.
@@ -199,16 +225,25 @@ export class TutorialSystem extends createSystem({
     this.globals.tourDone = true;
   }
 
-  // Reveal the cockpit (once). These are the same builders the SetupSystem used to
-  // call straight away; the tour just defers them until the student is ready.
-  private placeCockpit(): void {
-    if (this.cockpitPlaced) return;
-    placeControlStation(this.world);
-    placeReadoutBoard(this.world);
-    placeOrderBoard(this.world);
-    placeDayPanel(this.world);
-    placeForeman(this.world);
+  // Reveal the cockpit (once): queue the five builders, one per frame, then run
+  // `onDone` (the tour/game handoff that needs the finished cockpit). Building it
+  // all inside the click's frame stalls a headset long enough that the whole
+  // scene visibly blinks out; spread across frames the reveal reads the same but
+  // never drops the world. If the cockpit is already up, hand off right away.
+  private placeCockpit(onDone: () => void): void {
+    if (this.cockpitPlaced) {
+      onDone();
+      return;
+    }
     this.cockpitPlaced = true;
+    this.cockpitQueue = [
+      placeControlStation,
+      placeReadoutBoard,
+      placeOrderBoard,
+      placeDayPanel,
+      placeForeman,
+    ];
+    this.cockpitDone = onDone;
   }
 
   // --- Steps -----------------------------------------------------------------

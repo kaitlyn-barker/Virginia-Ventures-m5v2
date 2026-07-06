@@ -121,7 +121,10 @@ export function makeTextPlane(options: {
   // this when the student picks a business). We repaint the SAME canvas and
   // flag the texture as changed — the texture is re-used, so nothing leaks.
   const texture = (mesh.material as MeshBasicMaterial).map!;
+  let lastText = text;
   mesh.userData.setText = (newText: string): void => {
+    if (newText === lastText) return; // unchanged — skip the repaint + re-upload
+    lastText = newText;
     paintAutoFitText(ctx, canvas.width, canvas.height, newText, style);
     texture.needsUpdate = true;
   };
@@ -182,10 +185,7 @@ export function paintAutoFitText(
     const blockHeight = lines.length * size * 1.2; // 1.2 = comfy line spacing
     return widest <= maxTextWidth && blockHeight <= maxTextHeight;
   };
-  let fontSize = maxFontSize;
-  while (fontSize > 12 && !fitsAt(fontSize)) {
-    fontSize -= 4;
-  }
+  const fontSize = largestFit(fitsAt, 12, maxFontSize);
 
   // Draw the text: bold, centered, stacked around the middle of the card.
   ctx.fillStyle = new Color(textColor).getStyle();
@@ -300,8 +300,31 @@ export function drawCard(
   }
 }
 
+// Binary-search the largest font size (minSize..maxSize) whose `fits(size)`
+// check passes. Fitting is monotonic — when a size fits, every smaller size
+// fits too — so a handful of probes replaces a step-down scan. This matters
+// because each probe measures text on a canvas, and these labels are repainted
+// LIVE inside button-click handlers: in VR a long repaint stalls the frame
+// loop and the whole scene visibly drops out for a beat.
+export function largestFit(
+  fits: (size: number) => boolean,
+  minSize: number,
+  maxSize: number,
+): number {
+  if (fits(maxSize)) return maxSize;
+  let lo = minSize; // accepted as the floor even if it technically overflows
+  let hi = maxSize; // known not to fit
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (fits(mid)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
 // Shrink-to-fit a single line of text to a maximum width, returning the px font
-// size that fits (so titles never spill off their card).
+// size that fits (so titles never spill off their card). Leaves ctx.font set to
+// the returned size — callers rely on measuring with it right after.
 export function fitFontSize(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -310,12 +333,15 @@ export function fitFontSize(
   weight = "bold",
   minSize = 12,
 ): number {
-  let size = startSize;
+  const size = largestFit(
+    (s) => {
+      ctx.font = `${weight} ${s}px sans-serif`;
+      return ctx.measureText(text).width <= maxWidth;
+    },
+    minSize,
+    startSize,
+  );
   ctx.font = `${weight} ${size}px sans-serif`;
-  while (size > minSize && ctx.measureText(text).width > maxWidth) {
-    size -= 2;
-    ctx.font = `${weight} ${size}px sans-serif`;
-  }
   return size;
 }
 
@@ -483,14 +509,13 @@ export function makeControlCard(opts: {
     const textRight = W - M - Math.round(W * 0.05);
     const textW = textRight - textLeft;
     const textCx = (textLeft + textRight) / 2;
-    let size = Math.round(H * 0.26);
     const fits = (s: number): boolean => {
       ctx.font = `bold ${s}px sans-serif`;
       let widest = 0;
       for (const ln of lines) widest = Math.max(widest, ctx.measureText(ln).width);
       return widest <= textW && lines.length * s * 1.25 <= H - M * 2 - 16;
     };
-    while (size > 14 && !fits(size)) size -= 2;
+    const size = largestFit(fits, 14, Math.round(H * 0.26));
     ctx.font = `bold ${size}px sans-serif`;
     ctx.fillStyle = textColor;
     const lineH = size * 1.25;
@@ -519,7 +544,10 @@ export function makeControlCard(opts: {
 
   const card = makeCanvasPlane(canvas, width, height, true);
   const texture = (card.material as MeshBasicMaterial).map!;
+  let lastText = text;
   card.userData.setText = (newText: string): void => {
+    if (newText === lastText) return; // unchanged — skip the repaint + re-upload
+    lastText = newText;
     paint(newText);
     texture.needsUpdate = true;
   };
@@ -1168,16 +1196,16 @@ export function fitWrappedLines(
   minSize = 11,
 ): { lines: string[]; size: number; lineH: number } {
   const prefix = weight ? `${weight} ` : "";
-  let size = startSize;
-  let lines: string[] = [];
-  while (size > minSize) {
-    ctx.font = `${prefix}${size}px sans-serif`;
-    lines = wrapLines(ctx, text, maxWidth);
-    if (lines.length * size * 1.25 <= maxHeight) break;
-    size -= 2;
-  }
+  const size = largestFit(
+    (s) => {
+      ctx.font = `${prefix}${s}px sans-serif`;
+      return wrapLines(ctx, text, maxWidth).length * s * 1.25 <= maxHeight;
+    },
+    minSize,
+    startSize,
+  );
   ctx.font = `${prefix}${size}px sans-serif`;
-  return { lines, size, lineH: size * 1.25 };
+  return { lines: wrapLines(ctx, text, maxWidth), size, lineH: size * 1.25 };
 }
 
 // =============================================================================
@@ -1294,12 +1322,7 @@ export function buildReportBoard(
   ctx.fillStyle = UI.white;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  let titleSize = Math.round(titleH * 0.5);
-  ctx.font = `bold ${titleSize}px sans-serif`;
-  while (titleSize > 16 && ctx.measureText(title).width > cardW * 0.9) {
-    titleSize -= 2;
-    ctx.font = `bold ${titleSize}px sans-serif`;
-  }
+  fitFontSize(ctx, title, cardW * 0.9, Math.round(titleH * 0.5), "bold", 16);
   ctx.fillText(title, W / 2, cardY + titleH / 2);
 
   // The three score blocks fill the space between the title and summary bands,
@@ -1465,14 +1488,16 @@ export function makeNotePlane(
     ctx.textBaseline = "middle";
 
     const maxWidth = W * 0.84;
-    let fontSize = Math.round(H * 0.2);
-    let lines: string[] = [];
-    while (fontSize > 12) {
-      ctx.font = `bold ${fontSize}px sans-serif`;
-      lines = wrapLines(ctx, text, maxWidth);
-      if (lines.length * fontSize * 1.3 <= H * 0.8) break;
-      fontSize -= 4;
-    }
+    const fontSize = largestFit(
+      (s) => {
+        ctx.font = `bold ${s}px sans-serif`;
+        return wrapLines(ctx, text, maxWidth).length * s * 1.3 <= H * 0.8;
+      },
+      12,
+      Math.round(H * 0.2),
+    );
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    const lines = wrapLines(ctx, text, maxWidth);
 
     const lineHeight = fontSize * 1.3;
     const top = H / 2 - ((lines.length - 1) * lineHeight) / 2;
@@ -1494,7 +1519,10 @@ export function makeNotePlane(
   material.opacity = 0;
 
   const texture = material.map!;
+  let lastText = "";
   note.userData.setText = (text: string): void => {
+    if (text === lastText) return; // unchanged — skip the repaint + re-upload
+    lastText = text;
     paint(text);
     texture.needsUpdate = true;
   };

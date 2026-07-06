@@ -222,6 +222,11 @@ export class SetupSystem extends createSystem({
   machines: { required: [FactoryMachine] },
   welcomeParts: { required: [WelcomePart] },
 }) {
+  // The hand-off runs one piece per frame (see update). Doing it all inside the
+  // click's frame — three label repaints plus painting the whole goal card —
+  // stalls a headset long enough that the scene visibly blinks out for a beat.
+  private steps: Array<() => void> = [];
+
   init(): void {
     // Fires the instant a choice card is clicked.
     this.queries.picked.subscribe("qualify", (entity) => {
@@ -232,27 +237,31 @@ export class SetupSystem extends createSystem({
     });
   }
 
-  // Loads one business as the active one and reveals the running factory.
+  update(): void {
+    if (this.steps.length === 0) return;
+    // "Play Again" mid-hand-off (a teacher can hit R any time): the reset nulls
+    // activeFactory and sweeps the entities — drop the rest of the hand-off too.
+    if (!this.globals.activeFactory) {
+      this.steps = [];
+      return;
+    }
+    this.steps.shift()!();
+  }
+
+  // Loads one business as the active one and reveals the running factory. The
+  // click's own frame does only the instant, cheap parts; the canvas-heavy parts
+  // are queued so each lands on its own frame.
   private startFactory(factory: FactoryType): void {
     Sfx.clunk(); // a soft confirming click as the choice is made (also wakes the audio)
 
-    // 1. Restyle the machine + rewrite the intake / machine / output tags.
-    for (const machine of this.queries.machines.entities) {
-      const parts = machine.object3D!.userData;
-      (parts.machineMaterial as MeshLambertMaterial).color.set(factory.color);
-      parts.machineLabel.userData.setText(factory.machine);
-      parts.intakeLabel.userData.setText(titleCase(factory.material));
-      parts.outputLabel.userData.setText(titleCase(factory.product));
-    }
-
-    // 2. Remember the choice — its numbers are now the "active" values.
+    // 1. Remember the choice — its numbers are now the "active" values.
     this.globals.activeFactory = factory;
 
     // The dashboard's status pill flips from "Getting Ready" to the running
     // business, so the corner card reflects that the day has begun.
     setFactoryHudStatus(factory.name, "active");
 
-    // 3. Hide the menu FIRST: clear the welcome + the three choice cards away
+    // 2. Hide the menu FIRST: clear the welcome + the three choice cards away
     //    (this frees their canvas textures too), so the spot in front of the
     //    player is empty before the goal card takes it over. We copy the set to
     //    an array first, since disposing changes the live query. The cards are
@@ -266,13 +275,25 @@ export class SetupSystem extends createSystem({
       part.dispose();
     }
 
+    // 3. Restyle the machine + rewrite the intake / machine / output tags (each
+    //    tag repaint rasterizes a canvas, so they get a frame of their own).
+    this.steps.push(() => {
+      for (const machine of this.queries.machines.entities) {
+        const parts = machine.object3D!.userData;
+        (parts.machineMaterial as MeshLambertMaterial).color.set(factory.color);
+        parts.machineLabel.userData.setText(factory.machine);
+        parts.intakeLabel.userData.setText(titleCase(factory.material));
+        parts.outputLabel.userData.setText(titleCase(factory.product));
+      }
+    });
+
     // 4. THEN show the opening goal card ("Your Factory, Your Goal") on the now
     //    clear floor. The cockpit (desk, board, foreman) is NOT revealed yet —
     //    the TutorialSystem brings it in when the student clicks "Start the tour"
     //    (or "Skip tour"), then runs the foreman's guided walkthrough. Holding
     //    the cockpit back keeps the goal card clean and uncluttered, the same way
     //    the welcome screen had the floor to itself.
-    buildGoalCard(this.world);
+    this.steps.push(() => buildGoalCard(this.world));
   }
 }
 
